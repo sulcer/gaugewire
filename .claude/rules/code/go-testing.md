@@ -19,3 +19,5 @@ paths:
 - Time-dependent logic uses `testing/synctest`. Network is `httptest`; no test contacts a real
   service. A test that spawns the built binary carries `//go:build integration`.
 - A test name states the behaviour: `TestReduceKeepsStateWhenWindowAbsent`.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

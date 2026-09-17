@@ -19,3 +19,5 @@ paths:
 - Hook scripts are POSIX `sh` without `jq` or `python`, so they run under Git for Windows.
 - Releases are `v*` tags; goreleaser builds five binaries. Before 1.0, a breaking change bumps
   the minor version. The changelog is built from commit types, so keep subjects meaningful.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

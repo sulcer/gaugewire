@@ -17,3 +17,5 @@ paths:
 - Dev tools live only in `tools/go.mod` as `tool` directives, never as `go install ...@latest`.
 - Dependabot cooldowns are configured in `.github/dependabot.yml`; do not merge a bump early.
 - `go mod tidy -diff` must be clean for both modules.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

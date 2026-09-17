@@ -1,8 +1,8 @@
 # Architecture Decision Records
 
 Every decision someone would otherwise re-litigate, newest first. Format, supersession and
-amendment rules live in `.claude/rules/always-on/adr-and-spec-discipline.md` (created by the
-scaffold plan) and are summarised in the
+amendment rules live in `.claude/rules/always-on/adr-and-spec-discipline.md` and are summarised
+in the
 [documentation system spec](../spec/repo-scaffold/README.md#documentation-system).
 
 Read the relations column before trusting an ADR. `accepted` does not mean wholly current: an

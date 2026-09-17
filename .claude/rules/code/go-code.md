@@ -21,3 +21,5 @@ paths:
   with a sentence that starts with its name. No acronym a reader would have to look up.
 - Comments explain why. They never narrate the diff, the history, or an issue number.
 - Every file write is temporary file, fsync, rename. Every lock is an advisory file lock.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

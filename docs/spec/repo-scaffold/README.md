@@ -101,13 +101,14 @@ writes to the writer it was given), `gocritic`, `gosec`, `intrange`, `misspell`,
 noise on real code is dropped in the same PR that shows the noise.
 
 Windows runners may lack `make`, so CI calls `go` directly. The Makefile is a convenience that
-must never contain a command CI does not also run.
+must never contain a gate CI does not also run.
 
 ## Git hooks and commits
 
 `make setup` runs `git config core.hooksPath githooks` and warms the tools. Two POSIX scripts:
 
-- `githooks/pre-commit`: gofumpt check on staged Go files, `go vet ./...`, golangci-lint run.
+- `githooks/pre-commit`: gofumpt check on staged Go files, `go vet ./...`, `golangci-lint config
+  verify`, golangci-lint run.
 - `githooks/commit-msg`: Conventional Commits **without scope**: a
   `Merge`/`Revert`/`fixup!`/`squash!` line bypasses every check; otherwise the first line must be
   at most 72 characters (explicit length check), then match the shape
@@ -154,7 +155,7 @@ footer of a spec.
 | `always-on/workflow.md` | every session | read order, ask vs proceed, TDD and the gate, subagent rule injection, never-list. Includes: third-party behaviour is relied on only when publicly documented; anything else is an assumption to verify |
 | `always-on/adr-and-spec-discipline.md` | every session | ADR frontmatter and sections, supersede and amend back-links, spec header with `Draft|Stable` and `Built|Partial|Planned`, plans are ephemeral, flows get a Mermaid diagram |
 | `always-on/simplicity.md` | every session | boring solution first, indirection must earn its place, present simple vs complex before building complex |
-| `code/go-code.md` | `cmd/**/*.go`, `internal/**/*.go` | errors (`%w`, sentinels, `errors.AsType`), `context` first, `log/slog` only, `os.Exit` only in `main`, `run()` pattern, platform files by build tag, package dependency direction, comment policy |
+| `code/go-code.md` | `cmd/**/*.go`, `internal/**/*.go` | errors (`%w`, sentinels, `errors.AsType`), `context` first, `log/slog` only, `os.Exit` only in `main`, platform files by build tag, package dependency direction, comment policy |
 | `code/go-testing.md` | `**/*_test.go`, `testdata/**`, `fixtures/**` | table tests, `t.Parallel`, `t.Context`, `t.TempDir`, `testing/synctest` for time, `httptest`, whole-struct `cmp.Diff`, one assertion per test, expected values never harvested from the code under test, golden `-update` only with the diff shown to a human, `integration` tag, no network |
 | `code/dependencies.md` | `go.mod`, `go.sum`, `tools/**` | standard library first, a new dependency needs a one-line ADR and a govulncheck result, exact pins, Dependabot cooldown |
 | `code/ci-and-release.md` | `.github/**`, `.goreleaser.yaml`, `Makefile`, `githooks/**`, `scripts/**` | same-command property, SHA pinning, least privilege, release procedure |

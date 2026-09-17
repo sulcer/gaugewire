@@ -28,3 +28,5 @@ the diagram and never replaces it.
 `docs/plans/YYYY-MM-DD-slug.md`, committed on the feature branch, kept current as pull requests
 land, and deleted in the final pull request of the feature, after anything durable has moved to
 an ADR, a spec or `docs/nice-to-have.md`.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

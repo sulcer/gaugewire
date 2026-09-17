@@ -31,3 +31,5 @@ with the owner's approval, unless autonomous mode was granted for that session.
 
 A subagent does not inherit these rules. Give it the rule files whose `paths` match what it will
 touch, plus the relevant spec page. Verify its work yourself; verification is not delegated.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)

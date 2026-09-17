@@ -22,7 +22,8 @@ make build
 ./gaugewire version
 ```
 
-Go 1.27 is required; the toolchain downloads itself.
+Go 1.21 or newer is required; the `toolchain go1.27.1` line in `go.mod` downloads the exact
+version on first use.
 
 ## Develop
 

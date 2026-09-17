@@ -9,3 +9,5 @@ platform feature, then a dependency already present, then new code. When a task 
 the complex version, present the simple and the complex versions with their trade-offs and let
 the reviewer choose. Simplicity governs how, never whether: it never overrides correctness,
 validation at a trust boundary, error handling that prevents data loss, or the gate.
+
+Rationale: [docs/why-these-rules.md](../../../docs/why-these-rules.md)
