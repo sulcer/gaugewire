@@ -3,6 +3,7 @@ package quota
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestSnapshotJSONMatchesTheContract(t *testing.T) {
@@ -29,6 +30,20 @@ func TestSnapshotJSONMatchesTheContract(t *testing.T) {
 		`"observerVersion":"1.0.0"}`
 	if string(got) != want {
 		t.Fatalf("json mismatch\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestSnapshotNormalisesCapturedAtToUTCMilliseconds(t *testing.T) {
+	t.Parallel()
+	zone := time.FixedZone("CEST", 2*60*60)
+	captured := time.Date(2026, 9, 17, 17, 30, 0, 123_456_789, zone)
+	got, err := json.Marshal(NewSnapshot(Identity{}, NewState(), "e", captured).CapturedAt)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `"2026-09-17T15:30:00.123Z"`
+	if string(got) != want {
+		t.Fatalf("got %s, want %s", got, want)
 	}
 }
 

@@ -46,14 +46,15 @@ type Snapshot struct {
 	ObserverVersion string    `json:"observerVersion"`
 }
 
-// NewSnapshot builds the snapshot for the current state.
+// NewSnapshot builds the snapshot for the current state. CapturedAt is
+// normalised to UTC and truncated to millisecond precision.
 func NewSnapshot(id Identity, state State, eventID string, capturedAt time.Time) Snapshot {
 	return Snapshot{
 		SchemaVersion:   SchemaVersion,
 		EventID:         eventID,
 		Node:            Node{ID: id.NodeID, Alias: id.NodeAlias, Platform: id.Platform},
 		Account:         Account{ID: id.AccountID, Alias: id.AccountAlias},
-		CapturedAt:      capturedAt.UTC(),
+		CapturedAt:      capturedAt.UTC().Truncate(time.Millisecond),
 		Windows:         state.Windows,
 		Source:          Source{Type: SourceTypeClaudeCodeStatusline, ClaudeCodeVersion: state.ClaudeCodeVersion},
 		ObserverVersion: id.ObserverVersion,
