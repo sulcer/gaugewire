@@ -1,8 +1,11 @@
 package store
 
 import (
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -29,18 +32,24 @@ func TestHomeDefaultsToTheUserConfigDir(t *testing.T) {
 
 func TestEnsureLayoutCreatesThePrivateDirectories(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("posix permissions")
+	}
 	home := filepath.Join(t.TempDir(), "gaugewire")
 	if err := EnsureLayout(home); err != nil {
 		t.Fatalf("EnsureLayout: %v", err)
 	}
-	got := make(map[string]bool)
-	for _, dir := range []string{"", PendingDir, DeadLetterDir, LogsDir} {
+	got := map[string]fs.FileMode{}
+	for _, dir := range []string{".", PendingDir, DeadLetterDir, LogsDir} {
 		info, err := os.Stat(filepath.Join(home, dir))
-		got[dir] = err == nil && info.IsDir()
+		if err != nil {
+			t.Fatalf("stat %s: %v", dir, err)
+		}
+		got[dir] = info.Mode().Perm()
 	}
-	want := map[string]bool{"": true, PendingDir: true, DeadLetterDir: true, LogsDir: true}
-	if len(got) != len(want) || !got[""] || !got[PendingDir] || !got[DeadLetterDir] || !got[LogsDir] {
-		t.Fatalf("directories %v, want %v", got, want)
+	want := map[string]fs.FileMode{".": 0o700, PendingDir: 0o700, DeadLetterDir: 0o700, LogsDir: 0o700}
+	if !maps.Equal(want, got) {
+		t.Fatalf("permissions %v, want %v", got, want)
 	}
 }
 
