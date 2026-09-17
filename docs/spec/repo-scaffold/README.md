@@ -86,8 +86,8 @@ Every gate has one command, and CI runs that same command. There is no CI-only g
 | Vet | `go vet ./...` | pre-commit, CI lint |
 | Lint | `go tool -modfile=tools/go.mod golangci-lint config verify && ... run` | pre-commit, CI lint |
 | Tidy | `go mod tidy -diff` for `.` and `tools/` | CI lint |
-| Unit tests | `go test -race -shuffle=on -count=1 ./...` | Claude stop hook (without `-race`), CI test on ubuntu and windows; macOS on push to `main` and tags |
-| Integration | `go test -race -tags integration ./...` | CI test |
+| Unit tests | `go test -race -shuffle=on -count=1 ./...` | Claude stop hook (without `-race`), CI test on ubuntu and windows; macOS on push to `main` (`ci.yml`) and on tags (`release.yml`, which tests all three OSes before releasing) |
+| Integration | `go test -race -tags integration -count=1 ./...` | CI test |
 | Coverage | `go test -coverprofile` then `scripts/coverage-gate.sh` | CI coverage: hard gate on `internal/quota` and `internal/source/claude` (90 %), reported elsewhere |
 | Vulnerabilities | `go tool -modfile=tools/go.mod govulncheck ./...` | CI on every PR and weekly schedule |
 | Cross-compile | `goreleaser release --snapshot --clean` | CI snapshot on ubuntu |
@@ -108,10 +108,10 @@ must never contain a command CI does not also run.
 `make setup` runs `git config core.hooksPath githooks` and warms the tools. Two POSIX scripts:
 
 - `githooks/pre-commit`: gofumpt check on staged Go files, `go vet ./...`, golangci-lint run.
-- `githooks/commit-msg`: Conventional Commits **without scope**: an explicit check that the
-  first line is at most 72 characters, then the shape
-  `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)!?: [a-z][^ ].*$`, or a
-  `Merge`/`Revert`/`fixup!`/`squash!` line.
+- `githooks/commit-msg`: Conventional Commits **without scope**: a
+  `Merge`/`Revert`/`fixup!`/`squash!` line bypasses every check; otherwise the first line must be
+  at most 72 characters (explicit length check), then match the shape
+  `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)!?: [a-z][^ ].*$`.
 
 `--no-verify` is never used. Feature branches only, PRs into `main`, one semver meaning per
 release tag. Pre-1.0, a breaking change bumps the minor version.
@@ -121,8 +121,8 @@ release tag. Pre-1.0, a breaking change bumps the minor version.
 `ci.yml` runs on `pull_request` and `push` to `main`, with `concurrency` cancel-in-progress,
 `permissions: contents: read`, actions pinned by commit SHA with the version in a comment,
 `setup-go` caching keyed on both `go.sum` files. Jobs: `lint`, `test` (matrix ubuntu-latest,
-windows-latest), `test-macos` (only on push), `coverage`, `vuln`, `snapshot`. A `schedule`
-trigger runs `vuln` weekly.
+windows-latest), `test-macos` (only on push to main or manual dispatch), `coverage`, `vuln`,
+`snapshot`. A `schedule` trigger runs `vuln` weekly.
 
 `release.yml` runs on tags `v*`. It first runs the tests on Ubuntu, Windows and macOS, then
 calls goreleaser v2 with `contents: write`: darwin and
