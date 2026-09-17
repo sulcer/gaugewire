@@ -1,4 +1,15 @@
-.idea/
+# build outputs
 /gaugewire
 /gaugewire.exe
 /dist/
+coverage.out
+
+# editors
+.idea/
+.vscode/
+
+# personal, never shared
+CLAUDE.local.md
+/NOTES.local.md
+.claude/settings.local.json
+.claude/hooks/last-verify.log
