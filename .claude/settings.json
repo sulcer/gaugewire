@@ -26,16 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Edit(*.go)",
-            "command": "go",
-            "args": ["tool", "-modfile", "${CLAUDE_PROJECT_DIR}/tools/go.mod", "gofumpt", "-w", "${file_path}"],
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "if": "Write(*.go)",
-            "command": "go",
-            "args": ["tool", "-modfile", "${CLAUDE_PROJECT_DIR}/tools/go.mod", "gofumpt", "-w", "${file_path}"],
+            "command": "sh \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/format.sh",
             "timeout": 30
           }
         ]
