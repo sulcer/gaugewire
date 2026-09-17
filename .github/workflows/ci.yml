@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -29,7 +29,9 @@ jobs:
             tools/go.sum
       - run: go mod tidy -diff
       - run: cd tools && go mod tidy -diff
-      - run: test -z "$(go tool -modfile=tools/go.mod gofumpt -l .)"
+      - run: |
+          out=$(go tool -modfile=tools/go.mod gofumpt -l .)
+          [ -z "$out" ] || { echo "$out"; exit 1; }
       - run: go vet ./...
       - run: go tool -modfile=tools/go.mod golangci-lint config verify
       - run: go tool -modfile=tools/go.mod golangci-lint run

@@ -49,10 +49,7 @@ linters:
       enable-all: true
       disable:
         - fieldalignment
-    revive:
-      rules:
-        - name: exported
-        - name: package-comments
+    # default rule set; it includes exported and package-comments
   exclusions:
     generated: lax
     presets:

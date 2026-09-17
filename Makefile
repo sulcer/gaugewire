@@ -56,7 +56,7 @@ snapshot: ## goreleaser snapshot build for every platform into dist/
 
 check: fmt-check vet lint test ## The pre-commit gate plus unit tests
 
-ci: tidy-check check test-integration cover vuln ## Everything CI runs, except the macOS job
+ci: tidy-check check test-integration cover vuln snapshot ## Everything CI runs, except the macOS job
 
 clean: ## Remove build outputs
 	rm -rf gaugewire gaugewire.exe dist coverage.out

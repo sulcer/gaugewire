@@ -18,4 +18,5 @@ if [ -n "$go_files" ]; then
 fi
 
 go vet ./...
+go tool -modfile=tools/go.mod golangci-lint config verify
 go tool -modfile=tools/go.mod golangci-lint run
