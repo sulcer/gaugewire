@@ -1,6 +1,6 @@
 # Repository scaffold
 
-Status: Draft · Planned · 2026-09-17 · How the Gaugewire repository is built, gated, released and made legible to humans and AI agents.
+Status: Stable · Built · 2026-09-17 · How the Gaugewire repository is built, gated, released and made legible to humans and AI agents.
 
 ## At a glance
 
@@ -12,7 +12,7 @@ what needs judgment.
 
 Decisions taken on 2026-09-17 with the repo owner: Go 1.27, plain git hooks via
 `core.hooksPath`, Mermaid diagrams, CI on Ubuntu and Windows for every PR with macOS on `main`
-and tags. Each becomes an ADR when the scaffold lands.
+and tags. Each became an ADR when the scaffold landed.
 
 ## Diagram
 
@@ -63,6 +63,7 @@ goreleaser v2.18.2, gofumpt v0.12.0, govulncheck v1.8.0, staticcheck 2026.2.1 vi
 │   └── CODEOWNERS
 ├── .claude/
 │   ├── settings.json         permissions + hooks
+│   ├── hooks/format.sh       PostToolUse hook: gofumpt on edited .go files
 │   ├── hooks/verify.sh       Stop hook: go build + go test, failures as context
 │   └── rules/                always-on/ and code/ (see Rulebook)
 ├── cmd/gaugewire/main.go
@@ -92,7 +93,7 @@ Every gate has one command, and CI runs that same command. There is no CI-only g
 | Cross-compile | `goreleaser release --snapshot --clean` | CI snapshot on ubuntu |
 
 golangci-lint linters: the `standard` group plus a curated set validated with `config verify`
-at scaffold time. Candidates: `bodyclose`, `depguard` (deny logrus, viper, pkg/errors,
+at scaffold time. Enabled: `bodyclose`, `depguard` (deny logrus, viper, pkg/errors,
 testify), `errname`, `errorlint`, `exhaustive`, `forbidigo` (no `fmt.Print*`; a command
 writes to the writer it was given), `gocritic`, `gosec`, `intrange`, `misspell`, `nilerr`, `noctx`, `perfsprint`,
 `revive`, `thelper`, `tparallel`, `unconvert`, `unparam`, `usestdlibvars`, `usetesting`,
@@ -107,9 +108,10 @@ must never contain a command CI does not also run.
 `make setup` runs `git config core.hooksPath githooks` and warms the tools. Two POSIX scripts:
 
 - `githooks/pre-commit`: gofumpt check on staged Go files, `go vet ./...`, golangci-lint run.
-- `githooks/commit-msg`: Conventional Commits **without scope**:
-  `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)!?: [a-z].{0,71}$` on the
-  first line, or a `Merge`/`Revert` line.
+- `githooks/commit-msg`: Conventional Commits **without scope**: an explicit check that the
+  first line is at most 72 characters, then the shape
+  `^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)!?: [a-z][^ ].*$`, or a
+  `Merge`/`Revert`/`fixup!`/`squash!` line.
 
 `--no-verify` is never used. Feature branches only, PRs into `main`, one semver meaning per
 release tag. Pre-1.0, a breaking change bumps the minor version.
@@ -127,7 +129,8 @@ calls goreleaser v2 with `contents: write`: darwin and
 linux on amd64 and arm64, windows on amd64, `CGO_ENABLED=0`, `-trimpath`,
 `mod_timestamp: {{ .CommitTimestamp }}`, `-s -w -X main.version=... -X main.commit=... -X
 main.date=...`, tar.gz archives (zip on windows), checksums, changelog grouped by commit type
-(`feat`, `fix`, `perf`, others; `docs`/`chore`/`ci`/`test` excluded). `gaugewire version` prints
+(`feat`, `fix`, `perf`, others; `build`/`chore`/`ci`/`docs`/`refactor`/`style`/`test` excluded).
+`gaugewire version` prints
 the injected values and falls back to `debug.ReadBuildInfo` for `go install` builds.
 
 Deferred: Homebrew tap for the Mac Mini fleet, SBOM and signing, CodeQL (needs GHAS on a
@@ -162,12 +165,14 @@ Always-on total stays under 200 lines. Rationale and incidents live in
 `.claude/settings.json`:
 
 - `permissions.deny`: `Read(.env)`, `Read(.env.*)`, `Read(**/*.key)`.
-- `permissions.allow`: `go build`, `go test`, `go vet`, `go tool`, `go mod`, `go run`, `make`, read-only `git`.
-- `PostToolUse` on `Edit|Write` with `if: Edit(*.go)` and `if: Write(*.go)`: exec-form
-  `go tool -modfile ${CLAUDE_PROJECT_DIR}/tools/go.mod gofumpt -w ${file_path}`. No `jq`, so it
-  runs on Windows.
-- `Stop`: `.claude/hooks/verify.sh` runs `go build ./... && go test ./...` and returns failures
-  as `additionalContext`. The build cache keeps no-change turns near one second.
+- `permissions.allow`: `go build`, `go test`, `go vet`, `go tool`, `go mod`, `go run`, `go doc`,
+  `make`, read-only `git`.
+- `PostToolUse`, matcher `Edit|Write`: runs `sh "${CLAUDE_PROJECT_DIR}"/.claude/hooks/format.sh`,
+  a POSIX script that reads the hook's JSON from stdin, extracts `tool_input.file_path`,
+  unescapes it, and runs gofumpt `-w` on `.go` files. No `jq`, so it runs on Windows.
+- `Stop`: `.claude/hooks/verify.sh` runs `go build ./... && go test ./...`; on failure it writes
+  the output to `.claude/hooks/last-verify.log` and returns `additionalContext` telling the agent
+  to read that file. The build cache keeps no-change turns near one second.
 
 Code review uses Claude Code's built-in `/code-review`. No repo-local review skill until a
 recurring finding justifies one.
@@ -184,7 +189,7 @@ docs/
 │                          reducer-and-dedupe, spool-and-flush, databox-sink, cli-and-install,
 │                          testing-strategy, glossary
 ├── plans/                 implementation plans, committed, deleted when the feature lands
-├── how-tos/               acceptance-test.md, release.md, local-dev.md
+├── how-tos/               acceptance-test.md
 ├── research/              frozen inputs (the original ChatGPT spec)
 ├── why-these-rules.md     rationale and incidents behind the rules
 └── nice-to-have.md        deferred work: what, why deferred, trigger, reference
