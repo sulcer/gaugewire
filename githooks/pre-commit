@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pre-commit gate: format check, vet and lint whenever Go or module files are staged.
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.go' 'go.mod' 'go.sum' 'tools/go.mod' 'tools/go.sum' || true)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+go_files=$(printf '%s\n' "$staged" | grep '\.go$' || true)
+if [ -n "$go_files" ]; then
+  # shellcheck disable=SC2086
+  unformatted=$(go tool -modfile=tools/go.mod gofumpt -l $go_files)
+  if [ -n "$unformatted" ]; then
+    printf 'pre-commit: these files are not gofumpt-formatted:\n%s\nrun: make fmt\n' "$unformatted" >&2
+    exit 1
+  fi
+fi
+
+go vet ./...
+go tool -modfile=tools/go.mod golangci-lint run
