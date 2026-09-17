@@ -25,9 +25,10 @@ stateDiagram-v2
 ## Validation
 
 An incoming window is valid when `0 ≤ used_percentage ≤ 100` and `resets_at` is a positive
-integer of epoch seconds. An invalid window is treated as absent for that invocation and the
-failing field path is logged once. The `version` must parse and be at least `2.1.251`;
-otherwise the whole observation is skipped and rendering continues.
+integer of epoch seconds. An invalid window is treated as absent for that invocation; the parser
+reports the failing field path to its caller, and the hot path (not yet built) logs it once. The
+`version` must parse and be at least `2.1.251`; otherwise the whole observation is skipped and
+rendering continues.
 
 ## Reducer rules, per window
 

@@ -18,7 +18,10 @@ flowchart TD
     S[start gaugewire flush] --> L{try flush.lock}
     L -->|held| X[exit 0]
     L --> R[read pending/*, sort by name]
-    R --> K{next enabled sink}
+    R --> U{"file decodes?"}
+    U -->|no| Q["move to dead-letter/<br/>reason unreadable"] --> K
+    U -->|yes| K
+    K{next enabled sink}
     K -->|none left| W["write lastFlush, lastIngestion<br/>under state.lock"] --> X
     K --> D["due events for this sink,<br/>chunks of at most 100"]
     D --> P[sink.PublishBatch]

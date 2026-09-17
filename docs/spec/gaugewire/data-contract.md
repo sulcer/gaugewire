@@ -103,7 +103,7 @@ older or missing versions skip observation and `doctor` reports it.
 {
   "schemaVersion": 1,
   "windows": { "fiveHour": { "...": "..." }, "sevenDay": { "...": "..." } },
-  "lastObservedAt": "2026-09-17T15:30:00.000Z",
+  "lastObservedAt": "2026-09-17T15:30:00Z",
   "claudeCodeVersion": "2.1.274",
   "lastPublished": { "eventId": "...", "capturedAt": "...", "windows": { "...": "..." } },
   "lastFlush": { "at": "...", "ok": true, "error": "" },
