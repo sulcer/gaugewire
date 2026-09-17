@@ -1,0 +1,77 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errname
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - gocritic
+    - gosec
+    - intrange
+    - misspell
+    - nilerr
+    - noctx
+    - perfsprint
+    - revive
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog
+            - pkg: github.com/spf13/viper
+              desc: configuration is encoding/json
+            - pkg: github.com/pkg/errors
+              desc: use fmt.Errorf with %w
+            - pkg: github.com/stretchr/testify
+              desc: use the standard testing package
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: write to the io.Writer the command received, never to package-level stdout
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    # default rule set; it includes exported and package-comments
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - forbidigo
+          - noctx
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gofumpt:
+      extra:
+        group-params: true
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule

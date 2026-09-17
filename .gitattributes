@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sh text eol=lf
+githooks/* text eol=lf
+*.golden text eol=lf
+*.png binary

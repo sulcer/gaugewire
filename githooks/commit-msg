@@ -1,0 +1,26 @@
+#!/bin/sh
+# Commit-msg gate: Conventional Commits without a scope on the first line.
+set -eu
+
+first=$(sed -n '1p' "$1")
+
+case "$first" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+
+if [ "${#first}" -gt 72 ]; then
+  printf 'commit-msg: the first line is %s characters; the limit is 72\n' "${#first}" >&2
+  exit 1
+fi
+
+if printf '%s\n' "$first" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)!?: [a-z][^ ].*$'; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+commit-msg: the first line must be a Conventional Commit without a scope:
+  <type>: <lowercase subject, at most 72 characters>
+  types: feat fix docs style refactor perf test build ci chore revert
+got: $first
+EOF
+exit 1

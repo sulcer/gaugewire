@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go tool -modfile=tools/go.mod gofumpt:*)",
+      "Bash(go tool -modfile=tools/go.mod golangci-lint:*)",
+      "Bash(go tool -modfile=tools/go.mod govulncheck:*)",
+      "Bash(go tool -modfile=tools/go.mod goreleaser release --snapshot:*)",
+      "Bash(go mod:*)",
+      "Bash(go run:*)",
+      "Bash(go doc:*)",
+      "Bash(make:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/*.key)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/format.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/verify.sh",
+            "timeout": 180
+          }
+        ]
+      }
+    ]
+  }
+}
