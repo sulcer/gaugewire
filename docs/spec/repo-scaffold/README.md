@@ -166,8 +166,9 @@ Always-on total stays under 200 lines. Rationale and incidents live in
 `.claude/settings.json`:
 
 - `permissions.deny`: `Read(.env)`, `Read(.env.*)`, `Read(**/*.key)`.
-- `permissions.allow`: `go build`, `go test`, `go vet`, `go tool`, `go mod`, `go run`, `go doc`,
-  `make`, read-only `git`.
+- `permissions.allow`: `go build`, `go test`, `go vet`, `go mod`, `go run`, `go doc`, `make`,
+  read-only `git`, and `go tool` only for the four pinned tools (`gofumpt`, `golangci-lint`,
+  `govulncheck`, `goreleaser` snapshot).
 - `PostToolUse`, matcher `Edit|Write`: runs `sh "${CLAUDE_PROJECT_DIR}"/.claude/hooks/format.sh`,
   a POSIX script that reads the hook's JSON from stdin, extracts `tool_input.file_path`,
   unescapes it, and runs gofumpt `-w` on `.go` files. No `jq`, so it runs on Windows.
