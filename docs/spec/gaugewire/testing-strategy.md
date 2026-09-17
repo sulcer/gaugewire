@@ -1,6 +1,6 @@
 # Testing strategy
 
-Status: Draft · Planned · 2026-09-17 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
+Status: Draft · Partial · 2026-09-17 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
 
 ## At a glance
 
@@ -22,6 +22,8 @@ real Databox service is touched only by the manual acceptance test.
 | `sink/databox` (`httptest`) | happy path; 401; 429 with and without JSON body; 5xx; 400; missing `ingestionId`; chunking at 100; Current gets the newest; Current skipped when older than `currentCapturedAt`; bootstrap reuse by title and creation of only what is missing |
 | `config` | load, validate, unknown sink type, duration parsing, credentials precedence |
 | `cli` | install and uninstall round-trip on a temp `settings.json` preserving unrelated bytes; refuse double install; warn on a modified status line; `status` and `doctor` golden output |
+
+Built so far: the `quota`, `source/claude` and `store` rows.
 
 Timing-dependent logic (backoff, heartbeat) uses `testing/synctest`. Tests use `t.Context()`,
 `t.TempDir()` and `t.Setenv()`. Golden files live in `testdata/` and are regenerated only with

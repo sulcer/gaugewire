@@ -1,6 +1,6 @@
 # Reducer and dedupe
 
-Status: Draft · Planned · 2026-09-17 · How one observation becomes machine state, and when state becomes an event.
+Status: Draft · Built · 2026-09-17 · How one observation becomes machine state, and when state becomes an event.
 
 ## At a glance
 

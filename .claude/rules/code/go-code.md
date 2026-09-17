@@ -11,7 +11,8 @@ paths:
 - Errors: `fmt.Errorf("...: %w", err)`; a sentinel is `var ErrX = errors.New(...)` in the owning
   package; match with `errors.Is` and `errors.AsType`. No panic outside `main`. No `os.Exit`
   outside `cmd/gaugewire/main.go`; commands return errors.
-- `context.Context` is the first parameter of anything doing I/O, and every network call has a
+- `context.Context` is the first parameter of anything doing network I/O or that can block on
+  another process (locks); local file reads and writes take no context. Every network call has a
   timeout.
 - Logging is `log/slog` only. A command writes to the `io.Writer` it was given, never to
   package-level stdout.
