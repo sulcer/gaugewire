@@ -47,3 +47,28 @@ func TestResolveSettingsPathKeepsAMissingFileAbsolute(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
+
+func TestResolveSettingsPathResolvesTheParentOfAMissingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	t.Parallel()
+	base := t.TempDir()
+	target := filepath.Join(base, "dotfiles-claude")
+	link := filepath.Join(base, ".claude")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	realTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	path, err := resolveSettingsPath(filepath.Join(link, "settings.json"))
+	got := resolved{path, err != nil}
+	if want := (resolved{filepath.Join(realTarget, "settings.json"), false}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}

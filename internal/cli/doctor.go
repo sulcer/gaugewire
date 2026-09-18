@@ -66,8 +66,10 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 			return err
 		}
 	}
-	if *settingsPath, err = resolveSettingsPath(*settingsPath); err != nil {
-		return err
+	// A path that cannot be resolved is still reported by the checks rather
+	// than aborting the report.
+	if resolved, resolveErr := resolveSettingsPath(*settingsPath); resolveErr == nil {
+		*settingsPath = resolved
 	}
 	workDir, err := os.Getwd()
 	if err != nil {

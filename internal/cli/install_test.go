@@ -313,9 +313,13 @@ func TestInstalledCommandQuotesOnlyPathsWithSpaces(t *testing.T) {
 func TestRunInstallUsesTheFlags(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(store.HomeEnv, home)
-	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	settingsDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("eval temp dir: %v", err)
+	}
+	settingsPath := filepath.Join(settingsDir, "settings.json")
 	var stdout bytes.Buffer
-	err := runInstall(t.Context(), []string{"--settings", settingsPath, "--node-alias", "n1", "--account-alias", "a1"}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	err = runInstall(t.Context(), []string{"--settings", settingsPath, "--node-alias", "n1", "--account-alias", "a1"}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
 	cfg, loadErr := config.Load(home)
 	type outcome struct {
 		err, loadErr       bool
