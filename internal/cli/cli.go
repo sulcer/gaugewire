@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 // BuildInfo describes the running binary. The linker sets these values for a
@@ -36,6 +37,8 @@ func Run(ctx context.Context, args []string, info BuildInfo, streams IO) error {
 		return runStatusline(ctx, info, streams, spawnFlusher)
 	case "flush":
 		return runFlush(ctx, args[1:], info, streams)
+	case "status":
+		return runStatus(streams.Stdout, time.Now(), time.Local)
 	case "version":
 		return runVersion(info, streams.Stdout)
 	default:
