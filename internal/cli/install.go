@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -20,6 +21,10 @@ import (
 
 // ErrAlreadyInstalled means the status line already runs gaugewire.
 var ErrAlreadyInstalled = errors.New("status line already points at gaugewire; pass --force to reinstall")
+
+// ErrNoInstallRecord means the status line runs gaugewire but config.json has
+// no record of what it replaced, so reinstalling would lose the original.
+var ErrNoInstallRecord = errors.New("status line already points at gaugewire but config.json has no install record; restore settings.json from the newest .gaugewire-backup-* file and run install again")
 
 const defaultAccountAlias = "claude-01"
 
@@ -55,6 +60,11 @@ func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error
 		}
 		opts.settingsPath = path
 	}
+	absolute, err := filepath.Abs(opts.settingsPath)
+	if err != nil {
+		return fmt.Errorf("resolve settings path: %w", err)
+	}
+	opts.settingsPath = absolute
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
@@ -68,11 +78,10 @@ func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error
 }
 
 // install loads or creates config.json, splices the status-line command into
-// the settings file and records what it changed.
+// the settings file and records what it changed. config.json is saved before
+// the settings file is touched, so every intermediate state still knows how to
+// get back to the user's original status line.
 func install(home string, opts installOptions, stdout io.Writer) error {
-	if err := store.EnsureLayout(home); err != nil {
-		return err
-	}
 	cfg, err := loadOrCreateConfig(home, opts)
 	if err != nil {
 		return err
@@ -86,19 +95,15 @@ func install(home string, opts installOptions, stdout io.Writer) error {
 		return err
 	}
 	command := installedCommand(opts.executable)
-	alreadyOurs := isGaugewire(commandOf(current.Value))
-	if alreadyOurs && !opts.force {
+	currentCommand := commandOf(current.Value)
+	alreadyOurs := currentCommand != "" &&
+		(currentCommand == command || (cfg.Install != nil && currentCommand == cfg.Install.InstalledCommand) || isGaugewire(currentCommand))
+	switch {
+	case alreadyOurs && cfg.Install == nil:
+		return ErrNoInstallRecord
+	case alreadyOurs && !opts.force:
 		return ErrAlreadyInstalled
 	}
-	if !alreadyOurs {
-		cfg.Renderer.Command = commandOf(current.Value)
-		cfg.Install = &config.Install{OriginalStatusLine: current.Value}
-	}
-	if cfg.Install == nil {
-		cfg.Install = &config.Install{}
-	}
-	cfg.Install.SettingsPath = opts.settingsPath
-	cfg.Install.InstalledCommand = command
 	newValue, err := statusLineWith(current.Value, command)
 	if err != nil {
 		return err
@@ -107,13 +112,25 @@ func install(home string, opts installOptions, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if !alreadyOurs {
+		cfg.Renderer.Command = currentCommand
+		cfg.Install = &config.Install{OriginalStatusLine: current.Value}
+	}
+	cfg.Install.SettingsPath = opts.settingsPath
+	cfg.Install.InstalledCommand = command
+	if err := store.EnsureLayout(home); err != nil {
+		return err
+	}
+	if err := config.Save(home, cfg); err != nil {
+		return err
+	}
 	backup := "none (file did not exist)"
 	mode := os.FileMode(0o600)
 	if existed {
 		if info, statErr := os.Stat(opts.settingsPath); statErr == nil {
 			mode = info.Mode().Perm()
 		}
-		backup = opts.settingsPath + ".gaugewire-backup-" + opts.now().UTC().Format("20060102-150405")
+		backup = backupPath(opts.settingsPath, opts.now())
 		if err := store.WriteFileAtomic(backup, file, 0o600); err != nil {
 			return fmt.Errorf("write backup: %w", err)
 		}
@@ -122,9 +139,6 @@ func install(home string, opts installOptions, stdout io.Writer) error {
 	}
 	if err := store.WriteFileAtomic(opts.settingsPath, updated, mode); err != nil {
 		return fmt.Errorf("write settings: %w", err)
-	}
-	if err := config.Save(home, cfg); err != nil {
-		return err
 	}
 	renderer := cfg.Renderer.Command
 	if renderer == "" {
@@ -178,6 +192,19 @@ func installedCommand(executable string) string {
 		path = `"` + path + `"`
 	}
 	return path + " statusline"
+}
+
+// backupPath is the timestamped backup name, suffixed -2, -3, … so a second
+// install in the same second never overwrites the first backup.
+func backupPath(settingsPath string, at time.Time) string {
+	base := settingsPath + ".gaugewire-backup-" + at.UTC().Format("20060102-150405")
+	path := base
+	for n := 2; ; n++ {
+		if _, err := os.Stat(path); err != nil {
+			return path
+		}
+		path = base + "-" + strconv.Itoa(n)
+	}
 }
 
 func isGaugewire(command string) bool {

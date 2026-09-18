@@ -160,6 +160,8 @@ func TestInstallWithForceKeepsTheSavedOriginal(t *testing.T) {
 	err := install(home, opts, &bytes.Buffer{})
 	cfg, loadErr := config.Load(home)
 	data, _ := os.ReadFile(settingsPath)
+	first, _ := os.ReadFile(settingsPath + ".gaugewire-backup-20260918-103000")
+	second, _ := os.ReadFile(settingsPath + ".gaugewire-backup-20260918-103000-2")
 	type outcome struct {
 		err      bool
 		loadErr  bool
@@ -167,9 +169,68 @@ func TestInstallWithForceKeepsTheSavedOriginal(t *testing.T) {
 		original string
 		command  string
 		file     string
+		backup1  string
+		backup2  string
 	}
-	got := outcome{err != nil, loadErr != nil, cfg.Renderer.Command, compactJSON(cfg.Install.OriginalStatusLine), cfg.Install.InstalledCommand, string(data)}
-	want := outcome{false, false, "cat", `{"type":"command","command":"cat"}`, "/usr/local/bin/gaugewire statusline", `{"statusLine":{"type":"command","command":"/usr/local/bin/gaugewire statusline"}}`}
+	got := outcome{
+		err != nil, loadErr != nil, cfg.Renderer.Command, compactJSON(cfg.Install.OriginalStatusLine),
+		cfg.Install.InstalledCommand, string(data), string(first), string(second),
+	}
+	want := outcome{
+		false, false, "cat", `{"type":"command","command":"cat"}`,
+		"/usr/local/bin/gaugewire statusline",
+		`{"statusLine":{"type":"command","command":"/usr/local/bin/gaugewire statusline"}}`,
+		`{"statusLine":{"type":"command","command":"cat"}}`,
+		`{"statusLine":{"type":"command","command":"/opt/gaugewire/bin/gaugewire statusline"}}`,
+	}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestInstallRefusesAReinstallWithoutARecord(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	seeded := `{"statusLine":{"type":"command","command":"/opt/gaugewire/bin/gaugewire statusline"}}`
+	if err := os.WriteFile(settingsPath, []byte(seeded), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	opts := installOpts(settingsPath)
+	opts.force = true
+	err := install(home, opts, &bytes.Buffer{})
+	_, loadErr := config.Load(home)
+	data, _ := os.ReadFile(settingsPath)
+	type outcome struct {
+		noRecord bool
+		noConfig bool
+		file     string
+	}
+	got := outcome{errors.Is(err, ErrNoInstallRecord), errors.Is(loadErr, config.ErrMissing), string(data)}
+	want := outcome{true, true, seeded}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestInstallLeavesTheFileAloneWhenStatusLineIsNotAnObject(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	seeded := `{"statusLine":"cat"}`
+	if err := os.WriteFile(settingsPath, []byte(seeded), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	err := install(home, installOpts(settingsPath), &bytes.Buffer{})
+	data, _ := os.ReadFile(settingsPath)
+	_, backupErr := os.Stat(settingsPath + ".gaugewire-backup-20260918-103000")
+	type outcome struct {
+		failed   bool
+		file     string
+		noBackup bool
+	}
+	got := outcome{err != nil, string(data), errors.Is(backupErr, os.ErrNotExist)}
+	want := outcome{true, seeded, true}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
