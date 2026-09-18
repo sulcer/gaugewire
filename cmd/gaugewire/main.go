@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/sulcer/gaugewire/internal/cli"
 )
@@ -23,7 +24,7 @@ func main() {
 }
 
 func run() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	info := cli.BuildInfo{Version: version, Commit: commit, Date: date}
 	err := cli.Run(ctx, os.Args[1:], info, cli.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
