@@ -108,6 +108,36 @@ func Requeue(home string, now time.Time) (int, error) {
 	return moved, nil
 }
 
+// Quarantine renames every pending file that cannot be decoded to
+// dead-letter/<name>.unreadable, so a corrupt file never blocks delivery of the
+// others. It returns the file names it moved. The rename keeps the bytes for a
+// human to inspect; nothing can be added to content that does not decode.
+func Quarantine(home string) ([]string, error) {
+	pendingDir := filepath.Join(home, PendingDir)
+	names, err := eventFiles(pendingDir)
+	if err != nil {
+		return nil, err
+	}
+	var moved []string
+	for _, name := range names {
+		path := filepath.Join(pendingDir, name)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return moved, fmt.Errorf("read %s: %w", path, err)
+		}
+		var ev Event
+		if json.Unmarshal(raw, &ev) == nil {
+			continue
+		}
+		target := filepath.Join(home, DeadLetterDir, name+".unreadable")
+		if err := os.Rename(path, target); err != nil {
+			return moved, fmt.Errorf("quarantine %s: %w", path, err)
+		}
+		moved = append(moved, name)
+	}
+	return moved, nil
+}
+
 // Counts reports how many events wait in pending/ and dead-letter/.
 func Counts(home string) (pending, dead int, err error) {
 	pending, err = countEvents(filepath.Join(home, PendingDir))
