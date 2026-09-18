@@ -159,6 +159,26 @@ func TestRunDeadLettersPermanentFailuresAndContinues(t *testing.T) {
 	}
 }
 
+func TestRunDeadLetterTakesTheEventOutOfCirculation(t *testing.T) {
+	t.Parallel()
+	home := flusherHome(t)
+	spool(t, home, "evt-1", now.Add(-time.Minute), "a", "b")
+	a := &fakeSink{id: "a", script: []error{NewPermanent("invalid_api_key", errors.New("401"))}}
+	b := &fakeSink{id: "b"}
+	res, err := run(t, home, a, b)
+	got := snapshotSpool(t, home, res, err, a, b)
+	want := spoolState{
+		result:    Result{DeadLettered: 1},
+		pending:   map[string]map[string]store.DeliveryState{},
+		dead:      []string{"1789657140000-evt-1.json"},
+		batches:   [][]string{{"evt-1"}},
+		lastFlush: &store.FlushRecord{At: now, OK: true},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spoolState{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestRunSkipsEventsThatAreNotDueOrNotTargeted(t *testing.T) {
 	t.Parallel()
 	home := flusherHome(t)
@@ -208,12 +228,19 @@ func TestRunChunksAtMaxBatch(t *testing.T) {
 	}
 	a := &fakeSink{id: "a"}
 	res, err := run(t, home, a)
-	sizes := []int{}
+	type chunkOutcome struct {
+		delivered int
+		ok        bool
+		sizes     []int
+	}
+	sizes := make([]int, 0, len(a.batches))
 	for _, b := range a.batches {
 		sizes = append(sizes, len(b))
 	}
-	if err != nil || res.Delivered != MaxBatch+1 || len(sizes) != 2 || sizes[0] != MaxBatch || sizes[1] != 1 {
-		t.Fatalf("delivered=%d sizes=%v err=%v; want %d in two calls of %d and 1", res.Delivered, sizes, err, MaxBatch+1, MaxBatch)
+	got := chunkOutcome{delivered: res.Delivered, ok: err == nil, sizes: sizes}
+	want := chunkOutcome{delivered: MaxBatch + 1, ok: true, sizes: []int{100, 1}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(chunkOutcome{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -228,8 +255,15 @@ func TestRunExitsWhenAnotherFlusherHoldsTheLock(t *testing.T) {
 	defer func() { _ = unlock() }()
 	a := &fakeSink{id: "a"}
 	res, err := run(t, home, a)
-	if err != nil || !res.Skipped || len(a.batches) != 0 {
-		t.Fatalf("res=%+v err=%v batches=%v; want Skipped and no calls", res, err, a.batches)
+	type lockOutcome struct {
+		skipped bool
+		calls   int
+		err     bool
+	}
+	got := lockOutcome{skipped: res.Skipped, calls: len(a.batches), err: err != nil}
+	want := lockOutcome{skipped: true, calls: 0, err: false}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(lockOutcome{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -242,7 +276,15 @@ func TestRunQuarantinesAnUnreadableFileFirst(t *testing.T) {
 	}
 	a := &fakeSink{id: "a"}
 	res, err := run(t, home, a)
-	if err != nil || res.Quarantined != 1 || res.Delivered != 1 {
-		t.Fatalf("res=%+v err=%v; want 1 quarantined and 1 delivered", res, err)
+	got := snapshotSpool(t, home, res, err, a)
+	want := spoolState{
+		result:    Result{Delivered: 1, Quarantined: 1},
+		pending:   map[string]map[string]store.DeliveryState{},
+		dead:      []string{"1789657000000-evt-bad.json.unreadable"},
+		batches:   [][]string{{"evt-1"}},
+		lastFlush: &store.FlushRecord{At: now, OK: true},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spoolState{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }

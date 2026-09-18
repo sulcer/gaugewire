@@ -21,8 +21,6 @@ const RequestTimeout = 15 * time.Second
 // RunTimeout bounds one flusher run.
 const RunTimeout = 2 * time.Minute
 
-const stateLockFile = "state.lock"
-
 // Result summarises one flusher run.
 type Result struct {
 	Delivered    int
@@ -112,6 +110,10 @@ func (f Flusher) deliver(ctx context.Context, s Sink, events []store.PendingEven
 				if dlErr := store.DeadLetter(f.Home, events[i], s.ID()+": "+err.Error(), now); dlErr != nil {
 					return dlErr
 				}
+				// A dead-lettered event is out of circulation until requeued: clear
+				// its delivery map so no later sink in this run finds it targeted
+				// and recreates the pending file next to the dead-letter copy.
+				events[i].Event.Delivery = map[string]store.DeliveryState{}
 				res.DeadLettered++
 				f.Logger.Error("event dead-lettered", "eventId", events[i].Event.Snapshot.EventID, "sink", s.ID(), "code", code)
 			}
@@ -152,16 +154,19 @@ func (f Flusher) acknowledge(sinkID string, events []store.PendingEvent, chunk [
 }
 
 func (f Flusher) recordFlush(ctx context.Context, now time.Time, runErr error) {
-	unlock, err := store.Lock(ctx, filepath.Join(f.Home, stateLockFile), time.Second)
+	unlock, err := store.Lock(ctx, filepath.Join(f.Home, store.StateLockFile), time.Second)
 	if err != nil {
 		f.Logger.Warn("flush record skipped", "reason", err.Error())
 		return
 	}
 	defer func() { _ = unlock() }()
 	state, err := store.LoadState(f.Home)
-	if err != nil && !errors.Is(err, store.ErrStateCorrupt) {
-		f.Logger.Warn("flush record skipped", "reason", err.Error())
-		return
+	if err != nil {
+		if !errors.Is(err, store.ErrStateCorrupt) {
+			f.Logger.Warn("flush record skipped", "reason", err.Error())
+			return
+		}
+		f.Logger.Warn("state reset", "reason", err.Error())
 	}
 	record := &store.FlushRecord{At: now, OK: runErr == nil}
 	if runErr != nil {

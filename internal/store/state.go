@@ -14,6 +14,9 @@ import (
 // StateFile is the name of the machine state inside the home directory.
 const StateFile = "state.json"
 
+// StateLockFile serialises every reader and writer of state.json.
+const StateLockFile = "state.lock"
+
 // ErrStateCorrupt means state.json exists but could not be decoded; the caller
 // received a fresh state and should log the condition.
 var ErrStateCorrupt = errors.New("state.json is not valid; starting from a fresh state")
