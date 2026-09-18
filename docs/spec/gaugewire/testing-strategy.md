@@ -1,6 +1,6 @@
 # Testing strategy
 
-Status: Draft · Partial · 2026-09-17 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
+Status: Draft · Partial · 2026-09-18 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
 
 ## At a glance
 
@@ -23,7 +23,9 @@ real Databox service is touched only by the manual acceptance test.
 | `config` | load, validate, unknown sink type, duration parsing, credentials precedence |
 | `cli` | install and uninstall round-trip on a temp `settings.json` preserving unrelated bytes; refuse double install; warn on a modified status line; `status` and `doctor` golden output |
 
-Built so far: the `quota`, `source/claude` and `store` rows.
+Built so far: the `quota`, `source/claude`, `store`, `config`, `renderer`, `sink` and `cli` rows
+for the commands that exist; integration tests for the parallel hot path and the detached
+flusher.
 
 Timing-dependent logic (backoff, heartbeat) uses `testing/synctest`. Tests use `t.Context()`,
 `t.TempDir()` and `t.Setenv()`. Golden files live in `testdata/` and are regenerated only with
@@ -37,6 +39,9 @@ the diff shown to a human.
   to an `httptest` server; a second flusher exits immediately.
 - End to end with a fake renderer script: Claude-shaped stdin in, renderer output out, event
   spooled, delivered.
+
+Integration tests build the binary and prove that the detached flusher outlives the hot path and
+that eight parallel status-line invocations publish once.
 
 ## Coverage
 

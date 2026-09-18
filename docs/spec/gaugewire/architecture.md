@@ -1,13 +1,13 @@
 # Architecture
 
-Status: Draft · Planned · 2026-09-17 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
+Status: Draft · Partial · 2026-09-18 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
 
 ## At a glance
 
 Gaugewire is one static binary with five subcommand groups. The domain (`quota`) knows nothing
 about files, processes or networks. Adapters surround it: a source adapter for Claude Code's
 status line, a store for state and spool, a renderer bridge, and sinks. The CLI wires them. A
-future source or sink touches only its own package.
+future source or sink touches only its own package. This layout is built except `sink/databox`.
 
 ## Diagram
 
