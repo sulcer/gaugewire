@@ -230,19 +230,32 @@ func commandOf(value json.RawMessage) string {
 	return command
 }
 
-// statusLineWith returns the statusLine object with its command replaced, or
-// a new {"type":"command","command":...} object when there was none.
+// statusLineWith returns the statusLine object with its command replaced and a
+// "type" added when it had none. An absent value, or an object with no members,
+// is replaced by a fresh {"type":"command","command":...} object: neither holds
+// a setting worth keeping, and both would otherwise leave a typeless statusLine.
 func statusLineWith(value json.RawMessage, command string) (json.RawMessage, error) {
 	quoted, err := json.Marshal(command)
 	if err != nil {
 		return nil, err
 	}
+	fresh := json.RawMessage(`{"type":"command","command":` + string(quoted) + `}`)
 	if len(value) == 0 {
-		return json.RawMessage(`{"type":"command","command":` + string(quoted) + `}`), nil
+		return fresh, nil
+	}
+	var members map[string]json.RawMessage
+	if json.Unmarshal(value, &members) != nil || members == nil {
+		return nil, fmt.Errorf("statusLine is not an object: %w", settings.ErrNotObject)
+	}
+	if len(members) == 0 {
+		return fresh, nil
 	}
 	updated, err := settings.Set(value, "command", quoted)
 	if err != nil {
 		return nil, fmt.Errorf("statusLine is not an object: %w", err)
 	}
-	return updated, nil
+	if _, ok := members["type"]; ok {
+		return updated, nil
+	}
+	return settings.Set(updated, "type", json.RawMessage(`"command"`))
 }

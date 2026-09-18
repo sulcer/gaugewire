@@ -54,11 +54,12 @@ flowchart TD
 ```
 
 Rules: aliases default to the hostname and `claude-01`; `padding`, `refreshInterval`,
-`hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added only when no object
-existed; the binary path comes from `os.Executable()` and uses forward slashes on Windows, per
-the [status line page](https://code.claude.com/docs/en/statusline); the splice locates the
-top-level member by decoder token offsets so no other byte of the file changes.
-`refreshInterval` is never removed by install; `doctor` may advise.
+`hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added whenever the object
+has no `type`, and an absent `statusLine` or an object with no members becomes a fresh
+`{"type":"command","command":…}`; the binary path comes from `os.Executable()` and uses forward
+slashes on Windows, per the [status line page](https://code.claude.com/docs/en/statusline); the
+splice locates the top-level member by decoder token offsets so no other byte of the file
+changes. `refreshInterval` is never removed by install; `doctor` may advise.
 
 `config.json` is saved before the settings file is touched, so every intermediate state — a
 crash between the two writes — still knows how to get back to the user's original status line.
