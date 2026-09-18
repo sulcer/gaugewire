@@ -14,7 +14,7 @@ type outcome struct {
 func runCommand(t *testing.T, args []string, info BuildInfo) outcome {
 	t.Helper()
 	var stdout bytes.Buffer
-	err := Run(args, info, &stdout)
+	err := Run(t.Context(), args, info, IO{Stdout: &stdout})
 	got := outcome{stdout: stdout.String()}
 	if err != nil {
 		got.err = err.Error()
