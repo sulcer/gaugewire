@@ -25,7 +25,7 @@ type IO struct {
 }
 
 // ErrUsage is returned when the arguments do not name a valid command.
-var ErrUsage = errors.New("usage: gaugewire <command>\n\ncommands:\n  statusline          Claude Code status-line adapter (reads stdin)\n  flush [--requeue]   deliver pending events once\n  status              show quota state and spool counts\n  version             print version, commit and build date")
+var ErrUsage = errors.New("usage: gaugewire <command>\n\ncommands:\n  statusline          Claude Code status-line adapter (reads stdin)\n  flush [--requeue]   deliver pending events once\n  install [--settings path] [--node-alias a] [--account-alias b] [--force]\n                      install the status-line adapter\n  status              show quota state and spool counts\n  version             print version, commit and build date")
 
 // Run executes the command named by args.
 func Run(ctx context.Context, args []string, info BuildInfo, streams IO) error {
@@ -37,6 +37,8 @@ func Run(ctx context.Context, args []string, info BuildInfo, streams IO) error {
 		return runStatusline(ctx, info, streams, spawnFlusher)
 	case "flush":
 		return runFlush(ctx, args[1:], info, streams)
+	case "install":
+		return runInstall(ctx, args[1:], info, streams)
 	case "status":
 		return runStatus(streams.Stdout, time.Now(), time.Local)
 	case "version":
