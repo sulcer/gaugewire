@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
@@ -32,8 +34,8 @@ func TestOpenWritesJSONLinesToTheLogFile(t *testing.T) {
 	}
 	got := map[string]any{"msg": line["msg"], "eventId": line["eventId"], "level": line["level"]}
 	want := map[string]any{"msg": "event published", "eventId": "evt-1", "level": "INFO"}
-	if got["msg"] != want["msg"] || got["eventId"] != want["eventId"] || got["level"] != want["level"] {
-		t.Fatalf("got %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("log line mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -56,8 +58,19 @@ func TestOpenRotatesAFullLogFile(t *testing.T) {
 	_ = closeLog()
 	current, _ := os.ReadFile(filepath.Join(dir, FileName))
 	rotated, _ := os.Stat(filepath.Join(dir, FileName+".1"))
-	if rotated == nil || rotated.Size() != int64(rotateAt) || !strings.Contains(string(current), "after rotation") || len(current) >= rotateAt {
-		t.Fatalf("rotation failed: current=%d bytes, rotated=%v", len(current), rotated)
+	var rotatedSize int64
+	if rotated != nil {
+		rotatedSize = rotated.Size()
+	}
+	type outcome struct {
+		RotatedSize       int64
+		CurrentHasLine    bool
+		CurrentBelowLimit bool
+	}
+	got := outcome{rotatedSize, strings.Contains(string(current), "after rotation"), len(current) < rotateAt}
+	want := outcome{int64(rotateAt), true, true}
+	if got != want {
+		t.Fatalf("rotation outcome mismatch: got %+v, want %+v", got, want)
 	}
 }
 
