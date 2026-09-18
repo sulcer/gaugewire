@@ -12,6 +12,7 @@ func TestDecide(t *testing.T) {
 	publishedAt := at(t, "2026-09-17T15:00:00Z")
 	soon := at(t, "2026-09-17T15:10:00Z")
 	late := at(t, "2026-09-17T15:31:00Z")
+	exactly := at(t, "2026-09-17T15:30:00Z")
 	unknownWindows := Windows{FiveHour: Window{Status: WindowUnknown}, SevenDay: Window{Status: WindowUnknown}}
 	published := func(w Windows) *Published {
 		return &Published{EventID: "e1", CapturedAt: publishedAt, Windows: w}
@@ -39,8 +40,11 @@ func TestDecide(t *testing.T) {
 		{"a delta below the threshold does not publish", withPublished(both(40.7, 53), published(both(40, 53))), soon, Decision{}},
 		{"a delta at or above the threshold publishes a change", withPublished(both(41.1, 53), published(both(40, 53))), soon, Decision{Publish: true, EventType: EventChange}},
 		{"a drop of the threshold in the seven day window publishes a change", withPublished(both(40, 51.9), published(both(40, 53))), soon, Decision{Publish: true, EventType: EventChange}},
+		{"a one point move that straddles a power of two publishes a change", withPublished(both(64.1, 53), published(both(63.1, 53))), soon, Decision{Publish: true, EventType: EventChange}},
+		{"a one point drop that straddles a power of two publishes a change", withPublished(both(40, 31.3), published(both(40, 32.3))), soon, Decision{Publish: true, EventType: EventChange}},
 		{"nothing changed before the heartbeat interval does not publish", withPublished(both(40, 53), published(both(40, 53))), soon, Decision{}},
 		{"nothing changed after the heartbeat interval publishes a heartbeat", withPublished(both(40, 53), published(both(40, 53))), late, Decision{Publish: true, EventType: EventHeartbeat}},
+		{"nothing changed at exactly the heartbeat interval publishes a heartbeat", withPublished(both(40, 53), published(both(40, 53))), exactly, Decision{Publish: true, EventType: EventHeartbeat}},
 		{"heartbeat needs an observed window", withPublished(Windows{FiveHour: Window{Status: WindowExpired, ResetsAt: &reset}, SevenDay: Window{Status: WindowExpired, ResetsAt: &reset}}, published(Windows{FiveHour: Window{Status: WindowExpired, ResetsAt: &reset}, SevenDay: Window{Status: WindowExpired, ResetsAt: &reset}})), late, Decision{}},
 	}
 	for _, tc := range cases {

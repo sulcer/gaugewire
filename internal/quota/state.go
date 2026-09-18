@@ -16,7 +16,8 @@ type State struct {
 
 // Published records the snapshot most recently spooled for delivery.
 type Published struct {
-	EventID    string    `json:"eventId"`
+	EventID string `json:"eventId"`
+	// CapturedAt is normalised like the snapshot's.
 	CapturedAt time.Time `json:"capturedAt"`
 	Windows    Windows   `json:"windows"`
 }
@@ -34,6 +35,6 @@ func NewState() State {
 
 // MarkPublished records that a snapshot with the current windows was spooled.
 func MarkPublished(state State, eventID string, capturedAt time.Time) State {
-	state.LastPublished = &Published{EventID: eventID, CapturedAt: capturedAt, Windows: state.Windows}
+	state.LastPublished = &Published{EventID: eventID, CapturedAt: capturedAt.UTC().Truncate(time.Millisecond), Windows: state.Windows}
 	return state
 }

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,7 +25,7 @@ func TestLockSerialisesWriters(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			unlock, err := Lock(context.Background(), lockPath, 5*time.Second)
+			unlock, err := Lock(t.Context(), lockPath, 5*time.Second)
 			if err != nil {
 				errs <- err
 				return
@@ -58,12 +57,12 @@ func TestLockSerialisesWriters(t *testing.T) {
 func TestLockTimesOutWhileHeld(t *testing.T) {
 	t.Parallel()
 	lockPath := filepath.Join(t.TempDir(), "state.lock")
-	unlock, err := Lock(context.Background(), lockPath, time.Second)
+	unlock, err := Lock(t.Context(), lockPath, time.Second)
 	if err != nil {
 		t.Fatalf("first lock: %v", err)
 	}
 	defer func() { _ = unlock() }()
-	_, err = Lock(context.Background(), lockPath, 50*time.Millisecond)
+	_, err = Lock(t.Context(), lockPath, 50*time.Millisecond)
 	if !errors.Is(err, ErrLockTimeout) {
 		t.Fatalf("got %v, want ErrLockTimeout", err)
 	}
@@ -72,14 +71,14 @@ func TestLockTimesOutWhileHeld(t *testing.T) {
 func TestLockIsReleasedByUnlock(t *testing.T) {
 	t.Parallel()
 	lockPath := filepath.Join(t.TempDir(), "state.lock")
-	unlock, err := Lock(context.Background(), lockPath, time.Second)
+	unlock, err := Lock(t.Context(), lockPath, time.Second)
 	if err != nil {
 		t.Fatalf("first lock: %v", err)
 	}
 	if unlockErr := unlock(); unlockErr != nil {
 		t.Fatalf("unlock: %v", unlockErr)
 	}
-	second, err := Lock(context.Background(), lockPath, 50*time.Millisecond)
+	second, err := Lock(t.Context(), lockPath, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("second lock after unlock: %v", err)
 	}

@@ -82,12 +82,14 @@ func DeadLetter(home string, pe PendingEvent, reason string, now time.Time) erro
 }
 
 // Requeue moves every dead-letter event back to pending/ with its delivery state
-// reset, so the next flush retries it. It returns how many events were moved.
+// reset, so the next flush retries it. It returns how many events were moved,
+// even when it stops on an error.
 func Requeue(home string, now time.Time) (int, error) {
 	dead, err := listEvents(filepath.Join(home, DeadLetterDir))
 	if err != nil {
 		return 0, err
 	}
+	moved := 0
 	for _, pe := range dead {
 		ev := pe.Event
 		ev.DeadLetteredAt = nil
@@ -96,13 +98,14 @@ func Requeue(home string, now time.Time) (int, error) {
 			ev.Delivery[sink] = DeliveryState{NextAttemptAt: now.UTC()}
 		}
 		if err := writeEvent(filepath.Join(home, PendingDir, filepath.Base(pe.Path)), ev); err != nil {
-			return 0, err
+			return moved, err
 		}
 		if err := os.Remove(pe.Path); err != nil {
-			return 0, fmt.Errorf("remove %s: %w", pe.Path, err)
+			return moved, fmt.Errorf("remove %s: %w", pe.Path, err)
 		}
+		moved++
 	}
-	return len(dead), nil
+	return moved, nil
 }
 
 // Counts reports how many events wait in pending/ and dead-letter/.

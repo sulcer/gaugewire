@@ -132,9 +132,20 @@ func TestDeadLetterMovesTheEventWithAReason(t *testing.T) {
 	if err := DeadLetter(home, list[0], "http 401 invalid_api_key", now); err != nil {
 		t.Fatalf("DeadLetter: %v", err)
 	}
-	pending, dead, err := Counts(home)
-	if err != nil || pending != 0 || dead != 1 {
-		t.Fatalf("counts %d/%d, %v; want 0/1, nil", pending, dead, err)
+	dead, err := listEvents(filepath.Join(home, DeadLetterDir))
+	if err != nil {
+		t.Fatalf("listEvents: %v", err)
+	}
+	wantEvent := event("evt-1", captured)
+	wantEvent.DeadLetteredAt = &now
+	wantEvent.Reason = "http 401 invalid_api_key"
+	want := []PendingEvent{{Path: filepath.Join(home, DeadLetterDir, "1789657200000-evt-1.json"), Event: wantEvent}}
+	if diff := cmp.Diff(want, dead); diff != "" {
+		t.Fatalf("dead-letter mismatch (-want +got):\n%s", diff)
+	}
+	pending, _, err := Counts(home)
+	if err != nil || pending != 0 {
+		t.Fatalf("pending count %d, %v; want 0, nil", pending, err)
 	}
 }
 

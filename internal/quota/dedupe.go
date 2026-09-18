@@ -28,6 +28,9 @@ func DefaultPublishing() Publishing {
 	return Publishing{MinDeltaPercentage: 1.0, HeartbeatInterval: 30 * time.Minute}
 }
 
+// deltaTolerance is floating-point noise below any percentage the source can report.
+const deltaTolerance = 1e-9
+
 // Decision says whether the current state should be published and why.
 type Decision struct {
 	Publish   bool
@@ -53,8 +56,8 @@ func Decide(state State, now time.Time, p Publishing) Decision {
 	if !sameTime(current.FiveHour.ResetsAt, last.FiveHour.ResetsAt) || !sameTime(current.SevenDay.ResetsAt, last.SevenDay.ResetsAt) {
 		return Decision{Publish: true, EventType: EventChange}
 	}
-	if delta(current.FiveHour.UsedPercentage, last.FiveHour.UsedPercentage) >= p.MinDeltaPercentage ||
-		delta(current.SevenDay.UsedPercentage, last.SevenDay.UsedPercentage) >= p.MinDeltaPercentage {
+	if delta(current.FiveHour.UsedPercentage, last.FiveHour.UsedPercentage) >= p.MinDeltaPercentage-deltaTolerance ||
+		delta(current.SevenDay.UsedPercentage, last.SevenDay.UsedPercentage) >= p.MinDeltaPercentage-deltaTolerance {
 		return Decision{Publish: true, EventType: EventChange}
 	}
 	if anyObserved && now.Sub(state.LastPublished.CapturedAt) >= p.HeartbeatInterval {
