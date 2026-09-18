@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/sulcer/gaugewire/internal/config"
+	"github.com/sulcer/gaugewire/internal/store"
 )
 
 func installFixture(t *testing.T, original string) (home, settingsPath string) {
@@ -108,6 +110,46 @@ func TestUninstallWithPurgeDeletesTheHome(t *testing.T) {
 	}
 }
 
+// --purge is explicit and unconditional: local data goes even when the status
+// line is no longer ours and nothing can be restored.
+func TestUninstallPurgesEvenWhenTheStatusLineChanged(t *testing.T) {
+	t.Parallel()
+	home, settingsPath := installFixture(t, `{"statusLine":{"type":"command","command":"cat"}}`)
+	changed := `{"statusLine":{"type":"command","command":"jq -r .model.display_name"}}`
+	if err := os.WriteFile(settingsPath, []byte(changed), 0o600); err != nil {
+		t.Fatalf("change: %v", err)
+	}
+	var stdout bytes.Buffer
+	err := uninstall(home, "", true, &stdout)
+	got := snapshotUninstall(t, home, settingsPath, err, stdout.String())
+	want := uninstalled{
+		settings: changed,
+		homeGone: true,
+		stdout:   "warning: statusLine was changed since install; nothing restored\npurged: " + home + "\n",
+	}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// A previous run that wrote the settings file but died before saving config.json
+// leaves the file already restored; the next run must finish the job.
+func TestUninstallClearsTheRecordWhenAlreadyRestored(t *testing.T) {
+	t.Parallel()
+	original := `{"statusLine":{"type":"command","command":"cat"}}`
+	home, settingsPath := installFixture(t, original)
+	if err := os.WriteFile(settingsPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("restore by hand: %v", err)
+	}
+	var stdout bytes.Buffer
+	err := uninstall(home, "", false, &stdout)
+	got := snapshotUninstall(t, home, settingsPath, err, stdout.String())
+	want := uninstalled{settings: original, installed: false, stdout: "already restored: " + settingsPath + "\n"}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
 func TestUninstallWithoutAnInstall(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
@@ -117,5 +159,76 @@ func TestUninstallWithoutAnInstall(t *testing.T) {
 	err := uninstall(home, "", false, &bytes.Buffer{})
 	if !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("got %v, want ErrNotInstalled", err)
+	}
+}
+
+func TestUninstallWithoutAConfigFile(t *testing.T) {
+	t.Parallel()
+	err := uninstall(t.TempDir(), "", false, &bytes.Buffer{})
+	if !errors.Is(err, ErrNotInstalled) {
+		t.Fatalf("got %v, want ErrNotInstalled", err)
+	}
+}
+
+func TestUninstallRefusesAnInvalidConfig(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	seeded := `{"statusLine":{"type":"command","command":"/opt/gaugewire/bin/gaugewire statusline"}}`
+	if err := os.WriteFile(settingsPath, []byte(seeded), 0o600); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Node.ID = "not-a-uuid"
+	cfg.Install = &config.Install{
+		SettingsPath:       settingsPath,
+		InstalledCommand:   "/opt/gaugewire/bin/gaugewire statusline",
+		OriginalStatusLine: json.RawMessage(`{"type":"command","command":"cat"}`),
+	}
+	raw, marshalErr := json.Marshal(cfg)
+	if marshalErr != nil {
+		t.Fatalf("marshal: %v", marshalErr)
+	}
+	if err := os.WriteFile(filepath.Join(home, config.File), raw, 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	err := uninstall(home, "", false, &bytes.Buffer{})
+	after, _ := os.ReadFile(settingsPath)
+	type outcome struct {
+		invalid  bool
+		settings string
+	}
+	got := outcome{errors.Is(err, config.ErrInvalid), string(after)}
+	want := outcome{true, seeded}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestRunUninstallAbsolutizesTheSettingsFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(store.HomeEnv, home)
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"statusLine":{"type":"command","command":"cat"}}`
+	if err := os.WriteFile(settingsPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := install(home, installOpts(settingsPath), &bytes.Buffer{}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		t.Skipf("working directory: %v", cwdErr)
+	}
+	relative, relErr := filepath.Rel(cwd, settingsPath)
+	if relErr != nil {
+		t.Skipf("relative path: %v", relErr)
+	}
+	var stdout bytes.Buffer
+	err := runUninstall(t.Context(), []string{"--settings", relative}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	got := snapshotUninstall(t, home, settingsPath, err, stdout.String())
+	want := uninstalled{settings: original, stdout: "restored: " + settingsPath + "\n"}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

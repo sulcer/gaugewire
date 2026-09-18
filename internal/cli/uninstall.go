@@ -47,16 +47,16 @@ func runUninstall(_ context.Context, args []string, _ BuildInfo, streams IO) err
 }
 
 // uninstall restores the status line recorded at install when it is still
-// ours, clears the install record, and optionally deletes the home directory.
-// The restored value is the recorded original compacted onto one line, because
-// config.Save re-indents it and its original source bytes are gone; every other
-// byte of the settings file is left untouched.
+// ours, clears the install record, and deletes the home directory when purge
+// is set. The restored value is the recorded original compacted onto one line,
+// because config.Save re-indents it and its original source bytes are gone;
+// every other byte of the settings file is left untouched.
 func uninstall(home, settingsPath string, purge bool, stdout io.Writer) error {
 	cfg, err := config.Load(home)
 	if errors.Is(err, config.ErrMissing) {
 		return ErrNotInstalled
 	}
-	if err != nil && !errors.Is(err, config.ErrInvalid) {
+	if err != nil {
 		return err
 	}
 	if cfg.Install == nil {
@@ -65,19 +65,44 @@ func uninstall(home, settingsPath string, purge bool, stdout io.Writer) error {
 	if settingsPath == "" {
 		settingsPath = cfg.Install.SettingsPath
 	}
-	file, _, err := settings.Load(settingsPath)
+	file, existed, err := settings.Load(settingsPath)
 	if err != nil {
 		return err
+	}
+	if !existed {
+		fmt.Fprintf(stdout, "warning: %s does not exist; nothing restored\n", settingsPath)
+		return purgeHome(home, purge, stdout)
 	}
 	current, err := settings.Get(file, "statusLine")
 	if err != nil {
 		return err
 	}
+	hadNone := len(cfg.Install.OriginalStatusLine) == 0 || string(cfg.Install.OriginalStatusLine) == "null"
+	var original []byte
+	if !hadNone {
+		original, err = compactJSONValue(cfg.Install.OriginalStatusLine)
+		if err != nil {
+			return err
+		}
+	}
+	done, err := alreadyRestored(current, original, hadNone)
+	if err != nil {
+		return err
+	}
+	if done {
+		fmt.Fprintf(stdout, "already restored: %s\n", settingsPath)
+		return clearRecord(home, cfg, purge, stdout)
+	}
 	if commandOf(current.Value) != cfg.Install.InstalledCommand {
 		fmt.Fprintln(stdout, "warning: statusLine was changed since install; nothing restored")
-		return nil
+		return purgeHome(home, purge, stdout)
 	}
-	restored, hadNone, err := withoutGaugewire(file, cfg.Install.OriginalStatusLine)
+	var restored []byte
+	if hadNone {
+		restored, err = settings.Delete(file, "statusLine")
+	} else {
+		restored, err = settings.Set(file, "statusLine", original)
+	}
 	if err != nil {
 		return err
 	}
@@ -93,29 +118,53 @@ func uninstall(home, settingsPath string, purge bool, stdout io.Writer) error {
 	} else {
 		fmt.Fprintf(stdout, "restored: %s\n", settingsPath)
 	}
-	cfg.Install = nil
-	if purge {
-		if err := os.RemoveAll(home); err != nil {
-			return fmt.Errorf("purge home: %w", err)
-		}
-		fmt.Fprintf(stdout, "purged: %s\n", home)
-		return nil
+	return clearRecord(home, cfg, purge, stdout)
+}
+
+// alreadyRestored reports whether the settings file already holds what install
+// replaced. A run that wrote the settings file but died before saving
+// config.json leaves exactly this state, and the next run finishes the job.
+func alreadyRestored(current settings.Member, original []byte, hadNone bool) (bool, error) {
+	if hadNone {
+		return !current.Found, nil
 	}
+	if !current.Found {
+		return false, nil
+	}
+	currentValue, err := compactJSONValue(current.Value)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(currentValue, original), nil
+}
+
+// clearRecord drops the install record, or deletes the whole home directory
+// when purge is set, which makes saving config.json pointless.
+func clearRecord(home string, cfg config.Config, purge bool, stdout io.Writer) error {
+	if purge {
+		return purgeHome(home, true, stdout)
+	}
+	cfg.Install = nil
 	return config.Save(home, cfg)
 }
 
-// withoutGaugewire puts the recorded original back into the settings document,
-// or deletes the statusLine member when install found none. hadNone reports
-// which of the two happened.
-func withoutGaugewire(file []byte, original json.RawMessage) (restored []byte, hadNone bool, err error) {
-	if len(original) == 0 || string(original) == "null" {
-		restored, err = settings.Delete(file, "statusLine")
-		return restored, true, err
+// purgeHome deletes the home directory when purge is set. --purge is explicit
+// and unconditional, so it runs even when nothing could be restored.
+func purgeHome(home string, purge bool, stdout io.Writer) error {
+	if !purge {
+		return nil
 	}
-	var compact bytes.Buffer
-	if err = json.Compact(&compact, original); err != nil {
-		return nil, false, fmt.Errorf("compact original status line: %w", err)
+	if err := os.RemoveAll(home); err != nil {
+		return fmt.Errorf("purge home: %w", err)
 	}
-	restored, err = settings.Set(file, "statusLine", compact.Bytes())
-	return restored, false, err
+	fmt.Fprintf(stdout, "purged: %s\n", home)
+	return nil
+}
+
+func compactJSONValue(raw json.RawMessage) ([]byte, error) {
+	var out bytes.Buffer
+	if err := json.Compact(&out, raw); err != nil {
+		return nil, fmt.Errorf("compact status line: %w", err)
+	}
+	return out.Bytes(), nil
 }
