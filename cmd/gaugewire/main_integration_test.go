@@ -61,7 +61,11 @@ func TestBinaryExitsTwoOnUsageError(t *testing.T) {
 	}
 }
 
-func integrationHome(t *testing.T, rendererCommand string) string {
+// databoxSinks is the one enabled sink the end-to-end test configures; a test
+// that must not spawn a flusher passes "[]" instead.
+const databoxSinks = `[ { "id": "databox-main", "type": "databox", "enabled": true, "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" } } ]`
+
+func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 	t.Helper()
 	home := t.TempDir()
 	body := `{
@@ -70,7 +74,7 @@ func integrationHome(t *testing.T, rendererCommand string) string {
   "account": { "id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "alias": "it-account" },
   "renderer": { "command": ` + strconv.Quote(rendererCommand) + ` },
   "publishing": { "minDeltaPercentage": 1.0, "heartbeatInterval": "30m" },
-  "sinks": [ { "id": "databox-main", "type": "databox", "enabled": true, "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" } } ]
+  "sinks": ` + sinks + `
 }`
 	if err := os.WriteFile(filepath.Join(home, "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -93,7 +97,7 @@ func TestStatuslineEndToEnd(t *testing.T) {
 	}
 	t.Parallel()
 	binary := buildBinary(t, "")
-	home := integrationHome(t, "cat")
+	home := integrationHome(t, "cat", databoxSinks)
 	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
@@ -106,40 +110,33 @@ func TestStatuslineEndToEnd(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("pending files %v, want exactly one", pending)
 	}
-	waitForFlushersToSettle(t, home)
-	log, _ := os.ReadFile(filepath.Join(home, "logs", "gaugewire.log"))
-	if !strings.Contains(string(log), "flush finished") {
-		t.Fatal("the detached flusher never logged a finished run")
-	}
+	waitForFlushRuns(t, home, 1)
 }
 
-// waitForFlushersToSettle polls the log for the "delivered " summary line each
-// flusher process prints exactly once on exit, and returns once that count has
-// stopped growing, so a caller's later cleanup does not race a detached
-// flusher that is still writing to the home directory.
-func waitForFlushersToSettle(t *testing.T, home string) {
+// waitForFlushRuns polls the log until it holds exactly want "flush finished"
+// records, one per detached flusher process, so a caller's later cleanup does
+// not race a flusher still writing to the home directory.
+func waitForFlushRuns(t *testing.T, home string, want int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
-	var history []int
+	count := 0
 	for time.Now().Before(deadline) {
 		log, _ := os.ReadFile(filepath.Join(home, "logs", "gaugewire.log"))
-		count := strings.Count(string(log), "delivered ")
-		history = append(history, count)
-		if len(history) > 3 {
-			history = history[len(history)-3:]
-		}
-		if len(history) == 3 && history[0] >= 1 && history[0] == history[1] && history[1] == history[2] {
+		count = strings.Count(string(log), "flush finished")
+		if count == want {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatal("the flushers never settled")
+	t.Fatalf("the log holds %d flush runs, want %d", count, want)
 }
 
 func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "")
-	home := integrationHome(t, "")
+	// No sink is enabled, so nothing is spooled and no flusher is spawned: the
+	// test observes the state lock alone, with nothing left running at cleanup.
+	home := integrationHome(t, "", "[]")
 	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
@@ -162,9 +159,18 @@ func TestParallelStatuslinesPublishOnce(t *testing.T) {
 			t.Fatalf("statusline failed: %v", err)
 		}
 	}
-	pending, _ := filepath.Glob(filepath.Join(home, "pending", "*.json"))
-	if len(pending) != 1 {
-		t.Fatalf("pending files %d, want exactly one", len(pending))
+	log, readErr := os.ReadFile(filepath.Join(home, "logs", "gaugewire.log"))
+	if readErr != nil {
+		t.Fatalf("read log: %v", readErr)
 	}
-	waitForFlushersToSettle(t, home)
+	pending, _ := filepath.Glob(filepath.Join(home, "pending", "*.json"))
+	type outcome struct {
+		published int
+		pending   int
+	}
+	got := outcome{published: strings.Count(string(log), "event published"), pending: len(pending)}
+	want := outcome{published: 1, pending: 0}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
 }
