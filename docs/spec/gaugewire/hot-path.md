@@ -72,7 +72,7 @@ flowchart TD
 ## No renderer configured
 
 If no status line existed before install, Gaugewire renders nothing. Claude Code hides its
-footer keyboard hints once any status line is configured; `install` says so.
+footer keyboard hints once any status line is configured.
 
 ## Open questions
 

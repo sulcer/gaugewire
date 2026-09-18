@@ -1,6 +1,6 @@
 # CLI and install
 
-Status: Draft · Built · 2026-09-18 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
+Status: Draft · Partial · 2026-09-18 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
 
 ## At a glance
 
@@ -77,9 +77,31 @@ edited in place and the backup sits next to the real file; writing through a tem
 rename then replaces the real file rather than the link.
 The executable path is quoted only when it contains whitespace; assumption to verify on
 Windows: PowerShell requires `& "path" statusline` for a quoted path, which the installed
-command does not emit yet.
+command does not emit yet. A settings file with duplicate top-level keys is edited at the first
+occurrence; which one Claude Code honours is not documented and is an assumption to verify.
 
 ## Uninstall
+
+```mermaid
+flowchart TD
+    A[load config.json] -->|missing, or no install record| X["refuse: not installed"]
+    A --> B{"settings file<br/>exists?"}
+    B -->|no| W1["warning: path does not exist;<br/>nothing restored"]
+    B --> C{"statusLine already equals<br/>install.originalStatusLine?"}
+    C -->|yes| D["print already restored"]
+    C --> E{"statusLine.command equals<br/>install.installedCommand?"}
+    E -->|no| W2["warning: changed since install;<br/>nothing restored"]
+    E --> F["there was no original: delete the member<br/>else splice the original back and write"]
+    F --> G["print restored, or removed statusLine"]
+    D --> H["clear install in config.json"]
+    G --> H
+    W1 --> P{"--purge?"}
+    W2 --> P
+    H --> P
+    P -->|yes| Q["delete the home directory"]
+    P -->|no| R["done"]
+    Q --> R
+```
 
 If `statusLine.command` still equals `install.installedCommand`, restore
 `install.originalStatusLine` by the same splice (or delete the member when there was none) and
@@ -139,7 +161,7 @@ Reads `state.json` and counts spool files. No network.
 | Overrides | project `.claude/settings.local.json` or `.claude/settings.json` in the current directory overriding `statusLine`; `disableAllHooks: true` in any of those files or the settings file, in that precedence order |
 | Renderer | the saved command runs against a documented sample status-line payload under a five-second timeout; a failure reports `<command>: <error>` |
 | Identity | node and account ids are UUIDs, aliases set |
-| Home directory | exists, permissions, state readable, spool writable |
+| Home directory | exists, state readable, spool writable |
 | Quota windows | status of each window and age of the last observation |
 | `refreshInterval` | advice only when set |
 | Sink auth (with the Databox sink) | `GET /v1/auth/validate-key` |
@@ -150,8 +172,11 @@ Reads `state.json` and counts spool files. No network.
 The overrides check reads `.claude/settings.local.json` before `.claude/settings.json` in the
 current directory, then the settings file, matching Claude Code's documented precedence
 ([settings](https://code.claude.com/docs/en/settings)); it treats `disableAllHooks: true` as a
-failure because the settings reference states it disables the status line outside managed
-settings ([settings reference](https://code.claude.com/docs/en/settings-reference)).
+failure because the settings reference states it disables the status line
+([settings reference](https://code.claude.com/docs/en/settings-reference)). Doctor reads the
+`.claude/` directory of the current directory only, while Claude Code, run from a subdirectory,
+also reads the repository root's `.claude/settings.local.json`. Without `--settings`, doctor
+checks the file `install` recorded in `config.json` and falls back to the user settings file.
 
 Output is one line per check, `✓ name: detail` or `✗ name: detail`, a blank line, then `HEALTHY`
 or `UNHEALTHY`; exit code 1 on any ✗.
