@@ -92,8 +92,10 @@ older or missing versions skip observation and `doctor` reports it.
 ```
 
 - An empty or absent `renderer.command` means no renderer: Gaugewire prints nothing.
-- `install.originalStatusLine` is kept as raw JSON so uninstall restores the same object.
-  `install` is absent until `install` runs.
+- `install.originalStatusLine` is kept as raw JSON so uninstall restores the same object; it is
+  the original object JSON-equal to what install found, not its original source bytes, and it is
+  omitted entirely (never `null`) when install found no `statusLine` to save. `install.settingsPath`
+  is always an absolute path. `install` is absent until `install` runs.
 - Durations are Go duration strings. Unknown sink `type` fails validation.
 - Credentials: `apiKeyFile` if set, else the environment variable named by `apiKeyEnv`
   (default `DATABOX_API_KEY`). The key never appears in config, state, events or logs.

@@ -84,8 +84,9 @@ when present and never changes the class.
 ## Dead letters and requeue
 
 Dead letters are never deleted automatically. A dead-lettered event is out of circulation for the
-rest of that flusher run: later sinks in the same run do not receive it. `gaugewire status`
-shows their count. `gaugewire flush --requeue` puts a
+rest of that flusher run: later sinks in the same run do not receive it. `gaugewire status` and
+`gaugewire doctor` both show the dead-letter count and the newest one's reason; `doctor` also
+counts `.unreadable` files. `gaugewire flush --requeue` puts a
 dead-lettered event back, moving every dead-letter file to `pending/` with attempts reset, for use
 after fixing credentials or dataset ids. The sink's Current guard (see
 [databox-sink](databox-sink.md)) keeps a requeued old event from overwriting newer state.

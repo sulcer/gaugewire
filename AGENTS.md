@@ -50,6 +50,7 @@ internal/cli/            subcommands
 internal/quota/          domain: snapshot, windows, reducer, dedupe (pure, no I/O)
 internal/source/claude/  status-line JSON to observation
 internal/store/          home directory, atomic writes, locks, state, spool
+internal/settings/       edit one member of Claude Code's settings file by byte offsets
 internal/renderer/       the user's previous status-line command
 internal/sink/           Sink and Flusher; internal/sink/databox/ is the first sink
 internal/config/         config.json
@@ -60,8 +61,8 @@ scripts/                 coverage gate
 docs/                    adr, spec, plans, how-tos, research
 ```
 
-Dependency direction: `source → quota`, `quota → nothing`, `store, sink → quota`,
-`sink/databox → sink, quota`, `cli → everything`. Nothing imports `cli`.
+Dependency direction: `source → quota`, `quota → nothing`, `settings → nothing`,
+`store, sink → quota`, `sink/databox → sink, quota`, `cli → everything`. Nothing imports `cli`.
 
 ## Commands
 
