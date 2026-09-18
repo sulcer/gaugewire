@@ -33,6 +33,9 @@ func ListDeadLetters(home string) ([]DeadLetterEntry, int, error) {
 	var entries []DeadLetterEntry
 	unreadable := 0
 	for _, de := range dirEntries {
+		if de.IsDir() {
+			continue
+		}
 		name := de.Name()
 		switch {
 		case strings.HasSuffix(name, ".unreadable"):
