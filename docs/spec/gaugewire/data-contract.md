@@ -118,8 +118,8 @@ older or missing versions skip observation and `doctor` reports it.
 ```
 
 The hot path writes `windows`, `lastObservedAt`, `claudeCodeVersion` and `lastPublished` under
-`state.lock`. The flusher writes `lastFlush` and `lastIngestion` under `state.lock`, held only
-around the read-modify-write, never around network calls.
+`state.lock`. The flusher writes `lastFlush` under `state.lock`, held only around the
+read-modify-write, never around network calls; `lastIngestion` arrives with the Databox sink.
 
 ## Spooled event
 

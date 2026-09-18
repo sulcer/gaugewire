@@ -2,11 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/quota"
+	"github.com/sulcer/gaugewire/internal/sink"
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
@@ -41,5 +43,34 @@ func TestFlushWithoutConfigFails(t *testing.T) {
 	err := runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	if err == nil {
 		t.Fatal("got nil, want an error for a missing config")
+	}
+}
+
+func TestFlushSaysWhenAnotherFlusherHoldsTheLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(store.HomeEnv, home)
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("layout: %v", err)
+	}
+	if err := config.Save(home, testConfig(databoxSink())); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	unlock, held, err := store.TryLock(filepath.Join(home, sink.FlushLockFile))
+	if err != nil || !held {
+		t.Fatalf("pre-lock: held=%v err=%v", held, err)
+	}
+	defer func() { _ = unlock() }()
+	var stdout bytes.Buffer
+	err = runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	got := struct {
+		err bool
+		out string
+	}{err != nil, stdout.String()}
+	want := struct {
+		err bool
+		out string
+	}{false, "skipped: another flusher is running\ndelivered 0, retried 0, dead-lettered 0, quarantined 0\n"}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

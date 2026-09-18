@@ -8,7 +8,7 @@ An event is safe on disk before any delivery is attempted. The flusher is a sepa
 short-lived process that takes a machine-wide lock, delivers everything that is due in
 chronological order, updates or deletes event files, and exits. Nothing is ever silently
 discarded: transient failures are retried with backoff, permanent failures go to a dead-letter
-directory that `status` and `doctor` surface and `--requeue` can replay.
+directory that `status` surfaces and `--requeue` can replay.
 
 ## Diagram
 
@@ -53,7 +53,7 @@ on `eventId` and tolerate this.
    `flush.lock`, so a concurrent flusher cannot dead-letter an event into the directory being
    drained.
 3. A pending file that cannot be decoded is renamed to `dead-letter/<name>.unreadable` before
-   delivery, so a corrupt file never blocks the others; `doctor` reports such files.
+   delivery, so a corrupt file never blocks the others.
 4. For each enabled sink, take the events whose `delivery[sink].nextAttemptAt ≤ now`, in order,
    in chunks of at most 100.
 5. Success removes the sink from each event's `delivery`; a file with no sinks left is deleted.
@@ -74,7 +74,7 @@ relaunches it when due work exists. With Claude idle, nothing retries, by design
 |---|---|
 | transport error, timeout, DNS failure | retryable |
 | HTTP 408, 429, 500, 502, 503, 504 | retryable |
-| HTTP 401, 403 | permanent, `doctor` reports the sink as unauthenticated |
+| HTTP 401, 403 | permanent |
 | HTTP 400, 404, 413, 422 and other 4xx | permanent |
 | 2xx without the sink's acceptance marker | permanent |
 
@@ -84,8 +84,8 @@ when present and never changes the class.
 ## Dead letters and requeue
 
 Dead letters are never deleted automatically. A dead-lettered event is out of circulation for the
-rest of that flusher run: later sinks in the same run do not receive it. `gaugewire status` and
-`gaugewire doctor` show their count. `gaugewire flush --requeue` puts a
+rest of that flusher run: later sinks in the same run do not receive it. `gaugewire status`
+shows their count. `gaugewire flush --requeue` puts a
 dead-lettered event back, moving every dead-letter file to `pending/` with attempts reset, for use
 after fixing credentials or dataset ids. The sink's Current guard (see
 [databox-sink](databox-sink.md)) keeps a requeued old event from overwriting newer state.
