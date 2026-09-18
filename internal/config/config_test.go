@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,24 @@ func TestLoadRejectsInvalidJSON(t *testing.T) {
 	_, err := Load(home)
 	if err == nil || errors.Is(err, ErrMissing) {
 		t.Fatalf("got %v, want a decode error", err)
+	}
+}
+
+func TestLoadReturnsTheDecodedConfigWithAValidationError(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	writeConfig(t, home, strings.Replace(specExample, `"id": "6f1e2d3c-4b5a-4c6d-8e7f-9a0b1c2d3e4f"`, `"id": "not-a-uuid"`, 1))
+	got, err := Load(home)
+	gotSummary := struct {
+		invalid bool
+		command string
+	}{errors.Is(err, ErrInvalid), got.Renderer.Command}
+	want := struct {
+		invalid bool
+		command string
+	}{true, "bash ~/.claude/statusline-command.sh"}
+	if gotSummary != want {
+		t.Fatalf("got %+v, want %+v", gotSummary, want)
 	}
 }
 

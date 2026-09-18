@@ -106,15 +106,34 @@ func TestStatuslineEndToEnd(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("pending files %v, want exactly one", pending)
 	}
+	waitForFlushersToSettle(t, home)
+	log, _ := os.ReadFile(filepath.Join(home, "logs", "gaugewire.log"))
+	if !strings.Contains(string(log), "flush finished") {
+		t.Fatal("the detached flusher never logged a finished run")
+	}
+}
+
+// waitForFlushersToSettle polls the log for the "delivered " summary line each
+// flusher process prints exactly once on exit, and returns once that count has
+// stopped growing, so a caller's later cleanup does not race a detached
+// flusher that is still writing to the home directory.
+func waitForFlushersToSettle(t *testing.T, home string) {
+	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
+	var history []int
 	for time.Now().Before(deadline) {
 		log, _ := os.ReadFile(filepath.Join(home, "logs", "gaugewire.log"))
-		if strings.Contains(string(log), "flush finished") {
+		count := strings.Count(string(log), "delivered ")
+		history = append(history, count)
+		if len(history) > 3 {
+			history = history[len(history)-3:]
+		}
+		if len(history) == 3 && history[0] >= 1 && history[0] == history[1] && history[1] == history[2] {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatal("the detached flusher never logged a finished run")
+	t.Fatal("the flushers never settled")
 }
 
 func TestParallelStatuslinesPublishOnce(t *testing.T) {
@@ -147,4 +166,5 @@ func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("pending files %d, want exactly one", len(pending))
 	}
+	waitForFlushersToSettle(t, home)
 }

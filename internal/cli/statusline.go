@@ -29,9 +29,13 @@ func runStatusline(ctx context.Context, info BuildInfo, streams IO, spawn func(h
 	logger, closeLog := openLogger(home)
 	defer closeLog()
 	cfg, err := config.Load(home)
+	if errors.Is(err, config.ErrMissing) {
+		return nil
+	}
 	if err != nil {
-		if !errors.Is(err, config.ErrMissing) {
-			logger.Error("config unusable", "error", err.Error())
+		logger.Error("config unusable", "error", err.Error())
+		if rErr := renderer.Run(ctx, cfg.Renderer.Command, payload, streams.Stdout, streams.Stderr); rErr != nil {
+			logger.Warn("renderer failed", "error", rErr.Error())
 		}
 		return nil
 	}

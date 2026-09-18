@@ -30,6 +30,10 @@ const DefaultAPIKeyEnv = "DATABOX_API_KEY" //nolint:gosec // names an env var, n
 // ErrMissing means config.json does not exist; install creates it.
 var ErrMissing = errors.New("config.json not found; run gaugewire install first")
 
+// ErrInvalid means config.json decoded but failed validation; Load still
+// returns the decoded value so the hot path can keep the renderer running.
+var ErrInvalid = errors.New("config.json is invalid")
+
 // Duration is a time.Duration that reads and writes as a Go duration string.
 type Duration time.Duration
 
@@ -126,7 +130,7 @@ func Load(home string) (Config, error) {
 		return Config{}, fmt.Errorf("decode %s: %w", File, err)
 	}
 	if err := c.Validate(); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", File, err)
+		return c, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	return c, nil
 }

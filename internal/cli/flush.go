@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand/v2"
@@ -18,6 +19,9 @@ func runFlush(ctx context.Context, args []string, _ BuildInfo, streams IO) error
 	flags.SetOutput(streams.Stderr)
 	requeue := flags.Bool("requeue", false, "move dead-letter events back to pending first")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	home, err := store.Home()

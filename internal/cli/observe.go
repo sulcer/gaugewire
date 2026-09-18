@@ -43,7 +43,7 @@ func observe(ctx context.Context, home string, cfg config.Config, payload []byte
 		logger.Warn("observation dropped", "reason", err.Error())
 		return observeResult{}
 	}
-	res, _ := reduceAndSpool(home, cfg, obs, now, info, logger)
+	res := reduceAndSpool(home, cfg, obs, now, info, logger)
 	if unlockErr := unlock(); unlockErr != nil {
 		logger.Warn("unlock failed", "error", unlockErr.Error())
 	}
@@ -53,7 +53,7 @@ func observe(ctx context.Context, home string, cfg config.Config, payload []byte
 	return res
 }
 
-func reduceAndSpool(home string, cfg config.Config, obs quota.Observation, now time.Time, info BuildInfo, logger *slog.Logger) (observeResult, []string) {
+func reduceAndSpool(home string, cfg config.Config, obs quota.Observation, now time.Time, info BuildInfo, logger *slog.Logger) observeResult {
 	state, err := store.LoadState(home)
 	if err != nil {
 		logger.Warn("state reset", "reason", err.Error())
@@ -72,7 +72,7 @@ func reduceAndSpool(home string, cfg config.Config, obs quota.Observation, now t
 			}
 			if _, err := store.WritePending(home, ev); err != nil {
 				logger.Error("event not spooled", "eventId", eventID, "error", err.Error())
-				return res, targets
+				return res
 			}
 			res.Spawn = true
 		}
@@ -84,7 +84,7 @@ func reduceAndSpool(home string, cfg config.Config, obs quota.Observation, now t
 	if err := store.SaveState(home, state); err != nil {
 		logger.Error("state not saved", "error", err.Error())
 	}
-	return res, targets
+	return res
 }
 
 // hasDueWork reports whether any pending event is due. A listing error means a
