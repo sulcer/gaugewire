@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -56,6 +57,12 @@ func observe(ctx context.Context, home string, cfg config.Config, payload []byte
 func reduceAndSpool(home string, cfg config.Config, obs quota.Observation, now time.Time, info BuildInfo, logger *slog.Logger) observeResult {
 	state, err := store.LoadState(home)
 	if err != nil {
+		// A corrupt file is replaced by a fresh state; a file that cannot be read
+		// may still be intact, so nothing is written over it.
+		if !errors.Is(err, store.ErrStateCorrupt) {
+			logger.Warn("observation dropped", "reason", err.Error())
+			return observeResult{}
+		}
 		logger.Warn("state reset", "reason", err.Error())
 	}
 	state.State = quota.Reduce(state.State, obs)

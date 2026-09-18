@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -99,6 +100,37 @@ func TestObserveSkipsAnUnsupportedVersion(t *testing.T) {
 	res := observe(t.Context(), home, testConfig(databoxSink()), fixture(t, "old-version.json"), observedAt, BuildInfo{}, logging.Discard())
 	got := snapshotObserve(t, home, res)
 	want := observed{result: observeResult{}, statusOK: false}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestObserveDropsTheObservationWhenStateIsUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode 000 does not deny reads on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file with mode 000")
+	}
+	t.Parallel()
+	home := t.TempDir()
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("layout: %v", err)
+	}
+	if err := store.SaveState(home, store.NewState()); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	path := filepath.Join(home, store.StateFile)
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	res := observe(t.Context(), home, testConfig(databoxSink()), fixture(t, "full.json"), observedAt, BuildInfo{}, logging.Discard())
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatalf("restore mode: %v", err)
+	}
+	got := snapshotObserve(t, home, res)
+	want := observed{result: observeResult{}, pending: 0, dead: 0, statusOK: false}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
