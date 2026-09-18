@@ -35,12 +35,14 @@ func runStatus(stdout io.Writer, now time.Time, zone *time.Location) error {
 	if err != nil {
 		return err
 	}
-	entries, _, err := store.ListDeadLetters(home)
-	if err != nil {
-		return err
-	}
 	newest := ""
-	if len(entries) > 0 {
+	entries, _, err := store.ListDeadLetters(home)
+	switch {
+	case err != nil:
+		if _, werr := io.WriteString(stdout, "dead-letter/ could not be read; newest reason unavailable\n"); werr != nil {
+			return werr
+		}
+	case len(entries) > 0:
 		newest = entries[0].Reason
 	}
 	_, err = io.WriteString(stdout, renderStatus(cfg, state, pending, dead, newest, now, zone))

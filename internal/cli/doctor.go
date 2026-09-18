@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/renderer"
 	"github.com/sulcer/gaugewire/internal/settings"
 	"github.com/sulcer/gaugewire/internal/store"
@@ -18,9 +19,10 @@ import (
 // ErrUnhealthy makes doctor exit 1 when any check fails.
 var ErrUnhealthy = errors.New("one or more checks failed")
 
-// samplePayload is what doctor feeds the renderer: the smallest payload the
-// hot path itself accepts.
-const samplePayload = `{"version":"2.1.274","rate_limits":{"five_hour":{"used_percentage":24,"resets_at":1789669200},"seven_day":{"used_percentage":53.5,"resets_at":1789722000}}}`
+// samplePayload is what doctor feeds the renderer. It carries every documented
+// status-line field a renderer is likely to read, so a renderer that indexes
+// into the payload does not fail on the sample alone.
+const samplePayload = `{"session_id":"doctor","cwd":"/","model":{"id":"claude-sonnet-5","display_name":"Sonnet 5"},"workspace":{"current_dir":"/","project_dir":"/"},"version":"2.1.274","rate_limits":{"five_hour":{"used_percentage":24,"resets_at":1789669200},"seven_day":{"used_percentage":53.5,"resets_at":1789722000}}}`
 
 const rendererTimeout = 5 * time.Second
 
@@ -84,7 +86,9 @@ func runRendererSample(ctx context.Context, command string) error {
 
 // diagnose runs every offline check in display order.
 func diagnose(ctx context.Context, in doctorInput) []check {
-	cfg, cfgErr := loadConfigForDoctor(in.home)
+	// Load returns the decoded value alongside ErrInvalid, so every row after
+	// the configuration row still describes a config.json that failed validation.
+	cfg, cfgErr := config.Load(in.home)
 	state, _ := store.LoadState(in.home)
 	return []check{
 		checkConfiguration(cfgErr),

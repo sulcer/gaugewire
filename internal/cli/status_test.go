@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,36 @@ func TestRunStatusShowsAFreshStateWhenStateIsCorrupt(t *testing.T) {
 		err bool
 		out string
 	}{false, "state.json is not valid; showing a fresh state\n" + golden(t, "status_fresh.golden")}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestRunStatusSurvivesAnUnreadableDeadLetter(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(store.HomeEnv, home)
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("EnsureLayout: %v", err)
+	}
+	if err := config.Save(home, testConfig(databoxSink())); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, store.DeadLetterDir, "1789657000000-evt-bad.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	err := runStatus(&stdout, time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
+
+	got := struct {
+		err bool
+		out string
+	}{err != nil, stdout.String()}
+	want := struct {
+		err bool
+		out string
+	}{false, "dead-letter/ could not be read; newest reason unavailable\n" +
+		strings.Replace(golden(t, "status_fresh.golden"), "Dead letters:      0", "Dead letters:      1", 1)}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}

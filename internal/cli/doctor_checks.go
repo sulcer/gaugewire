@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,16 +15,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/source/claude"
 	"github.com/sulcer/gaugewire/internal/store"
 )
-
-// loadConfigForDoctor keeps an invalid config.json readable, so the rows after
-// the configuration row still say what they can about a broken installation.
-func loadConfigForDoctor(home string) (config.Config, error) {
-	cfg, err := config.Load(home)
-	if err != nil && !errors.Is(err, config.ErrInvalid) {
-		return config.Config{}, err
-	}
-	return cfg, err
-}
 
 func checkConfiguration(err error) check {
 	if err != nil {
@@ -66,17 +55,19 @@ func checkStatusLineIntegration(cfg config.Config, in doctorInput) check {
 }
 
 // checkOverrides looks for project settings that replace the status line or
-// disable hooks, both of which stop the installed command from running.
+// disable hooks, both of which stop the installed command from running. The
+// files are read in Claude Code's precedence order, local before project before
+// user, so the file named is the one that actually wins.
 func checkOverrides(in doctorInput) check {
 	name := "overrides"
-	projectSettings := filepath.Join(in.workDir, ".claude", "settings.json")
 	projectLocal := filepath.Join(in.workDir, ".claude", "settings.local.json")
-	for _, path := range []string{projectSettings, projectLocal} {
+	projectSettings := filepath.Join(in.workDir, ".claude", "settings.json")
+	for _, path := range []string{projectLocal, projectSettings} {
 		if member, ok := settingsMember(path, "statusLine"); ok && member.Found {
 			return check{name: name, detail: path + " overrides statusLine"}
 		}
 	}
-	for _, path := range []string{projectSettings, projectLocal, in.settingsPath} {
+	for _, path := range []string{projectLocal, projectSettings, in.settingsPath} {
 		member, ok := settingsMember(path, "disableAllHooks")
 		if !ok {
 			continue

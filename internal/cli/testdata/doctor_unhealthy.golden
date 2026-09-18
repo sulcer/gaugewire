@@ -1,7 +1,7 @@
 ✓ configuration: valid
 ✗ claude code version: 2.1.100 (minimum 2.1.251)
 ✗ status-line integration: points elsewhere: jq -r .model.display_name
-✗ overrides: <workDir>/.claude/settings.local.json overrides statusLine
+✗ overrides: <localSettings> overrides statusLine
 ✗ renderer: cat: exit 3: renderer: exit status 3
 ✓ identity: mac-mini-01 / claude-01
 ✓ home directory: <home>
