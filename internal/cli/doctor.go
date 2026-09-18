@@ -66,6 +66,9 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 			return err
 		}
 	}
+	if *settingsPath, err = resolveSettingsPath(*settingsPath); err != nil {
+		return err
+	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		return err

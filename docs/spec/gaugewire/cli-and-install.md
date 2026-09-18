@@ -72,8 +72,10 @@ when a second install lands in the same second. `--settings` is resolved and sto
 absolute path. A `statusLine` whose value is not a JSON object is refused before anything is
 written, settings file or `config.json`. `install.originalStatusLine` is omitted from
 `config.json` entirely when there was no `statusLine` to save, rather than stored as `null`.
-Writing through a temporary file and rename replaces a symlinked settings file with a regular
-file. The executable path is quoted only when it contains whitespace; assumption to verify on
+The settings path is resolved through symlinks before it is used, so a dotfiles-managed file is
+edited in place and the backup sits next to the real file; writing through a temporary file and
+rename then replaces the real file rather than the link.
+The executable path is quoted only when it contains whitespace; assumption to verify on
 Windows: PowerShell requires `& "path" statusline` for a quoted path, which the installed
 command does not emit yet.
 

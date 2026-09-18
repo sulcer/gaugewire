@@ -60,11 +60,11 @@ func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error
 		}
 		opts.settingsPath = path
 	}
-	absolute, err := filepath.Abs(opts.settingsPath)
+	resolvedPath, err := resolveSettingsPath(opts.settingsPath)
 	if err != nil {
-		return fmt.Errorf("resolve settings path: %w", err)
+		return err
 	}
-	opts.settingsPath = absolute
+	opts.settingsPath = resolvedPath
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)

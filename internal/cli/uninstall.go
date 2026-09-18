@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/settings"
@@ -33,11 +32,11 @@ func runUninstall(_ context.Context, args []string, _ BuildInfo, streams IO) err
 	}
 	path := *settingsPath
 	if path != "" {
-		absolute, err := filepath.Abs(path)
+		resolvedPath, err := resolveSettingsPath(path)
 		if err != nil {
-			return fmt.Errorf("resolve settings path: %w", err)
+			return err
 		}
-		path = absolute
+		path = resolvedPath
 	}
 	home, err := store.Home()
 	if err != nil {

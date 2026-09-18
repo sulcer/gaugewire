@@ -205,10 +205,16 @@ func TestUninstallRefusesAnInvalidConfig(t *testing.T) {
 	}
 }
 
-func TestRunUninstallAbsolutizesTheSettingsFlag(t *testing.T) {
+func TestRunUninstallResolvesTheSettingsFlag(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(store.HomeEnv, home)
-	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	// The temp directory is itself reached through a symlink on macOS; resolving
+	// it here keeps the expected path the one uninstall reports.
+	dir, dirErr := filepath.EvalSymlinks(t.TempDir())
+	if dirErr != nil {
+		t.Fatalf("resolve temp dir: %v", dirErr)
+	}
+	settingsPath := filepath.Join(dir, "settings.json")
 	original := `{"statusLine":{"type":"command","command":"cat"}}`
 	if err := os.WriteFile(settingsPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
