@@ -1,13 +1,14 @@
 # Data contract
 
-Status: Draft · Planned · 2026-09-17 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
+Status: Draft · Partial · 2026-09-17 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
 
 ## At a glance
 
 Sinks never see Anthropic's raw schema. They receive `QuotaSnapshot v1`, a versioned object
 owned by this project. Everything on disk is JSON written atomically. Only the four quota fields
 and the Claude Code version are ever read from the status-line input; nothing else from it is
-persisted.
+persisted. The snapshot, state and spooled-event shapes are built; `config.json` and the identity
+wiring are not.
 
 ## Source input
 
@@ -33,10 +34,10 @@ older or missing versions skip observation and `doctor` reports it.
   "eventId": "uuid-v4",
   "node":    { "id": "node-uuid", "alias": "mac-mini-01", "platform": "darwin" },
   "account": { "id": "account-uuid", "alias": "claude-01" },
-  "capturedAt": "2026-09-17T15:30:00.000Z",
+  "capturedAt": "2026-09-17T15:30:00Z",
   "windows": {
-    "fiveHour": { "status": "observed", "usedPercentage": 24,   "resetsAt": "2026-09-17T16:20:00.000Z" },
-    "sevenDay": { "status": "observed", "usedPercentage": 53.5, "resetsAt": "2026-09-18T07:00:00.000Z" }
+    "fiveHour": { "status": "observed", "usedPercentage": 24,   "resetsAt": "2026-09-17T16:20:00Z" },
+    "sevenDay": { "status": "observed", "usedPercentage": 53.5, "resetsAt": "2026-09-18T07:00:00Z" }
   },
   "source": { "type": "claude-code-statusline", "claudeCodeVersion": "2.1.274" },
   "observerVersion": "1.0.0"
@@ -48,11 +49,13 @@ older or missing versions skip observation and `doctor` reports it.
 | `schemaVersion` | integer | `1`. A breaking change bumps it and gets an ADR. |
 | `eventId` | UUID v4 | Generated when the event is spooled. History primary key. |
 | `node.platform` | `darwin`, `linux`, `windows` | `runtime.GOOS`. |
-| `capturedAt` | RFC 3339 UTC, milliseconds | Wall clock at the hot path. |
+| `capturedAt` | RFC 3339 UTC, at most millisecond precision (trailing zeros trimmed) | Wall clock at the hot path. |
 | `windows.*.status` | `unknown`, `observed`, `expired` | See [reducer](reducer-and-dedupe.md). |
 | `windows.*.usedPercentage` | number or `null` | `0 ≤ x ≤ 100`, never rounded, `null` unless `observed`. `0` is a real value. |
 | `windows.*.resetsAt` | RFC 3339 UTC or `null` | Kept through `expired` for diagnostics. |
 | `observerVersion` | string | Injected at build time. |
+
+`NewSnapshot` normalises `capturedAt` to UTC and truncates it to milliseconds.
 
 ## Event types
 
@@ -101,7 +104,7 @@ older or missing versions skip observation and `doctor` reports it.
 {
   "schemaVersion": 1,
   "windows": { "fiveHour": { "...": "..." }, "sevenDay": { "...": "..." } },
-  "lastObservedAt": "2026-09-17T15:30:00.000Z",
+  "lastObservedAt": "2026-09-17T15:30:00Z",
   "claudeCodeVersion": "2.1.274",
   "lastPublished": { "eventId": "...", "capturedAt": "...", "windows": { "...": "..." } },
   "lastFlush": { "at": "...", "ok": true, "error": "" },

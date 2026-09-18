@@ -1,6 +1,6 @@
 # Gaugewire
 
-Status: Draft · Planned · 2026-09-17 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
+Status: Draft · Partial · 2026-09-17 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
 
 ## At a glance
 

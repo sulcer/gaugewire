@@ -1,6 +1,6 @@
 # Reducer and dedupe
 
-Status: Draft · Planned · 2026-09-17 · How one observation becomes machine state, and when state becomes an event.
+Status: Draft · Built · 2026-09-17 · How one observation becomes machine state, and when state becomes an event.
 
 ## At a glance
 
@@ -25,9 +25,11 @@ stateDiagram-v2
 ## Validation
 
 An incoming window is valid when `0 ≤ used_percentage ≤ 100` and `resets_at` is a positive
-integer of epoch seconds. An invalid window is treated as absent for that invocation and the
-failing field path is logged once. The `version` must parse and be at least `2.1.251`;
-otherwise the whole observation is skipped and rendering continues.
+integer of epoch seconds. An invalid window is treated as absent for that invocation; the parser
+reports the failing window path (`rate_limits.five_hour` or `rate_limits.seven_day`) to its
+caller, and the hot path (not yet built) logs it once. The
+`version` must parse and be at least `2.1.251`; otherwise the whole observation is skipped and
+rendering continues.
 
 ## Reducer rules, per window
 
@@ -75,3 +77,6 @@ Defaults: `minDeltaPercentage: 1.0`, `heartbeatInterval: 30m`. Example against a
 ## Open questions
 
 - Monotonic usage within a window: assumption, see above.
+- An idle session that re-sends an already-expired window with the same reset would flip it back
+  to `observed`; the spec relies on Claude Code dropping passed windows. If the acceptance test
+  shows otherwise, ignore an incoming reading whose reset equals a stored `expired` window's reset.

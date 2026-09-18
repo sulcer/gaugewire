@@ -1,6 +1,6 @@
 # Glossary
 
-Status: Draft · Planned · 2026-09-17 · One meaning per term. Every spec page links a term here on first use.
+Status: Draft · Partial · 2026-09-17 · One meaning per term. Every spec page links a term here on first use.
 
 | Term | Meaning |
 |---|---|
