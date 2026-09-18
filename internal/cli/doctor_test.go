@@ -97,6 +97,29 @@ func TestDoctorReportsDisableAllHooks(t *testing.T) {
 	}
 }
 
+// Claude Code reads the layers local, project, user and the first that defines
+// a setting wins, so a false in a higher layer hides a true in a lower one.
+func TestDoctorIgnoresDisableAllHooksBelowTheLayerThatSetsItFalse(t *testing.T) {
+	t.Parallel()
+	home, settingsPath := doctorHealthyFixture(t)
+	workDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workDir, ".claude"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, ".claude", "settings.local.json"), []byte(`{"disableAllHooks": false}`), 0o600); err != nil {
+		t.Fatalf("local: %v", err)
+	}
+	user := `{"disableAllHooks":true,"statusLine":{"type":"command","command":"/opt/gaugewire/bin/gaugewire statusline"}}`
+	if err := os.WriteFile(settingsPath, []byte(user), 0o600); err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return nil })
+	got := renderDoctor(diagnose(t.Context(), in))
+	if want := doctorGolden(t, "doctor_healthy.golden", home, workDir); got != want {
+		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestDoctorUnhealthy(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()

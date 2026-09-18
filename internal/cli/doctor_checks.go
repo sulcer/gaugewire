@@ -67,15 +67,21 @@ func checkOverrides(in doctorInput) check {
 			return check{name: name, detail: path + " overrides statusLine"}
 		}
 	}
+	// The first layer that defines disableAllHooks decides; a false there hides
+	// whatever a lower layer says.
 	for _, path := range []string{projectLocal, projectSettings, in.settingsPath} {
 		member, ok := settingsMember(path, "disableAllHooks")
-		if !ok {
+		if !ok || !member.Found {
 			continue
 		}
 		var disabled bool
-		if json.Unmarshal(member.Value, &disabled) == nil && disabled {
+		if json.Unmarshal(member.Value, &disabled) != nil {
+			continue
+		}
+		if disabled {
 			return check{name: name, detail: path + " sets disableAllHooks"}
 		}
+		break
 	}
 	return check{name: name, ok: true, detail: "none in " + in.workDir}
 }
