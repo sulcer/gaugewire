@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -23,7 +24,11 @@ func runStatus(stdout io.Writer, now time.Time, zone *time.Location) error {
 		return err
 	}
 	state, err := store.LoadState(home)
-	if err != nil {
+	if errors.Is(err, store.ErrStateCorrupt) {
+		if _, werr := io.WriteString(stdout, "state.json is not valid; showing a fresh state\n"); werr != nil {
+			return werr
+		}
+	} else if err != nil {
 		return err
 	}
 	pending, dead, err := store.Counts(home)
@@ -48,6 +53,9 @@ func renderStatus(cfg config.Config, state store.State, pending, dead int, now t
 	fmt.Fprintf(&b, "Last publish:      %s\n\n", ago(publishedAt, now))
 	fmt.Fprintf(&b, "Pending events:    %d\nDead letters:      %d\n\n", pending, dead)
 	for _, s := range cfg.Sinks {
+		if !s.Enabled {
+			continue
+		}
 		fmt.Fprintf(&b, "%-18s %s\n", s.ID+":", flushLine(state.LastFlush, now))
 	}
 	return b.String()
@@ -56,6 +64,9 @@ func renderStatus(cfg config.Config, state store.State, pending, dead int, now t
 func windowLine(w quota.Window, now time.Time, zone *time.Location) string {
 	switch w.Status {
 	case quota.WindowObserved:
+		if w.UsedPercentage == nil || w.ResetsAt == nil {
+			return "unknown"
+		}
 		percent := strconv.FormatFloat(*w.UsedPercentage, 'f', -1, 64) + "%"
 		return fmt.Sprintf("%-10s Reset:  %s", percent, resetLabel(*w.ResetsAt, now, zone))
 	case quota.WindowExpired:

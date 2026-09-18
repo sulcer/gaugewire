@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/quota"
 	"github.com/sulcer/gaugewire/internal/store"
 )
@@ -46,5 +48,34 @@ func TestRenderStatusFresh(t *testing.T) {
 	got := renderStatus(testConfig(databoxSink()), store.NewState(), 0, 0, time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
 	if want := golden(t, "status_fresh.golden"); got != want {
 		t.Fatalf("status mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRunStatusShowsAFreshStateWhenStateIsCorrupt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(store.HomeEnv, home)
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("EnsureLayout: %v", err)
+	}
+	if err := config.Save(home, testConfig(databoxSink())); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, store.StateFile), []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	err := runStatus(&stdout, time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
+
+	got := struct {
+		err bool
+		out string
+	}{err != nil, stdout.String()}
+	want := struct {
+		err bool
+		out string
+	}{false, "state.json is not valid; showing a fresh state\n" + golden(t, "status_fresh.golden")}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
