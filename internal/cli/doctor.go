@@ -38,6 +38,12 @@ type doctorInput struct {
 	workDir      string
 	now          time.Time
 	runRenderer  func(ctx context.Context, command string) error
+
+	// cfg is the decoded config.json and cfgErr whatever loading it returned.
+	// Load returns the decoded value alongside ErrInvalid, so every row after
+	// the configuration row still describes a config.json that failed validation.
+	cfg    config.Config
+	cfgErr error
 }
 
 func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) error {
@@ -50,22 +56,21 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 		}
 		return err
 	}
-	if *settingsPath == "" {
-		path, err := settings.DefaultPath()
-		if err != nil {
-			return err
-		}
-		*settingsPath = path
-	}
 	home, err := store.Home()
 	if err != nil {
 		return err
+	}
+	cfg, cfgErr := config.Load(home)
+	if *settingsPath == "" {
+		if *settingsPath, err = recordedOrDefaultSettingsPath(cfg); err != nil {
+			return err
+		}
 	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	in := doctorInput{home: home, settingsPath: *settingsPath, workDir: workDir, now: time.Now(), runRenderer: runRendererSample}
+	in := doctorInput{home: home, settingsPath: *settingsPath, workDir: workDir, now: time.Now(), runRenderer: runRendererSample, cfg: cfg, cfgErr: cfgErr}
 	checks := diagnose(ctx, in)
 	if _, err := io.WriteString(streams.Stdout, renderDoctor(checks)); err != nil {
 		return err
@@ -78,6 +83,16 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 	return nil
 }
 
+// recordedOrDefaultSettingsPath prefers the file install edited, so doctor
+// checks the same file even when it is not the user settings file. An invalid
+// config.json still carries the record: Load returns the decoded value with it.
+func recordedOrDefaultSettingsPath(cfg config.Config) (string, error) {
+	if cfg.Install != nil && cfg.Install.SettingsPath != "" {
+		return cfg.Install.SettingsPath, nil
+	}
+	return settings.DefaultPath()
+}
+
 func runRendererSample(ctx context.Context, command string) error {
 	ctx, cancel := context.WithTimeout(ctx, rendererTimeout)
 	defer cancel()
@@ -86,17 +101,14 @@ func runRendererSample(ctx context.Context, command string) error {
 
 // diagnose runs every offline check in display order.
 func diagnose(ctx context.Context, in doctorInput) []check {
-	// Load returns the decoded value alongside ErrInvalid, so every row after
-	// the configuration row still describes a config.json that failed validation.
-	cfg, cfgErr := config.Load(in.home)
 	state, _ := store.LoadState(in.home)
 	return []check{
-		checkConfiguration(cfgErr),
+		checkConfiguration(in.cfgErr),
 		checkClaudeCodeVersion(state),
-		checkStatusLineIntegration(cfg, in),
+		checkStatusLineIntegration(in.cfg, in),
 		checkOverrides(in),
-		checkRenderer(ctx, cfg, in),
-		checkIdentity(cfg),
+		checkRenderer(ctx, in.cfg, in),
+		checkIdentity(in.cfg),
 		checkHomeDirectory(in.home),
 		checkQuotaWindows(state, in.now),
 		checkRefreshInterval(in),

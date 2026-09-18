@@ -57,11 +57,19 @@ func doctorHealthyFixture(t *testing.T) (home, settingsPath string) {
 	return home, settingsPath
 }
 
+// doctorIn builds the input runDoctor would build, loading config.json from the
+// fixture home the same way.
+func doctorIn(t *testing.T, home, settingsPath, workDir string, runRenderer func(context.Context, string) error) doctorInput {
+	t.Helper()
+	cfg, cfgErr := config.Load(home)
+	return doctorInput{home: home, settingsPath: settingsPath, workDir: workDir, now: doctorNow, runRenderer: runRenderer, cfg: cfg, cfgErr: cfgErr}
+}
+
 func TestDoctorHealthy(t *testing.T) {
 	t.Parallel()
 	home, settingsPath := doctorHealthyFixture(t)
 	workDir := t.TempDir()
-	in := doctorInput{home: home, settingsPath: settingsPath, workDir: workDir, now: doctorNow, runRenderer: func(context.Context, string) error { return nil }}
+	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return nil })
 	got := renderDoctor(diagnose(t.Context(), in))
 	if want := doctorGolden(t, "doctor_healthy.golden", home, workDir); got != want {
 		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
@@ -79,7 +87,7 @@ func TestDoctorReportsDisableAllHooks(t *testing.T) {
 	if err := os.WriteFile(projectSettings, []byte(`{"disableAllHooks": true}`), 0o600); err != nil {
 		t.Fatalf("project: %v", err)
 	}
-	in := doctorInput{home: home, settingsPath: settingsPath, workDir: workDir, now: doctorNow, runRenderer: func(context.Context, string) error { return nil }}
+	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return nil })
 	got := renderDoctor(diagnose(t.Context(), in))
 	want := doctorGolden(t, "doctor_healthy.golden", home, workDir)
 	want = strings.Replace(want, "✓ overrides: none in "+workDir, "✗ overrides: "+projectSettings+" sets disableAllHooks", 1)
@@ -131,7 +139,7 @@ func TestDoctorUnhealthy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, store.DeadLetterDir, "1789657000000-evt-bad.json.unreadable"), []byte("{"), 0o600); err != nil {
 		t.Fatalf("unreadable: %v", err)
 	}
-	in := doctorInput{home: home, settingsPath: settingsPath, workDir: workDir, now: doctorNow, runRenderer: func(context.Context, string) error { return errors.New("exit 3: renderer: exit status 3") }}
+	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return errors.New("exit 3: renderer: exit status 3") })
 	got := renderDoctor(diagnose(t.Context(), in))
 	if want := doctorGolden(t, "doctor_unhealthy.golden", home, workDir); got != want {
 		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
@@ -185,5 +193,27 @@ func TestRunDoctorHealthyReturnsNil(t *testing.T) {
 	err := runDoctor(t.Context(), []string{"--settings", settingsPath}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
 	if err != nil || !strings.HasSuffix(stdout.String(), "\nHEALTHY\n") {
 		t.Fatalf("err=%v stdout=%q", err, stdout.String())
+	}
+}
+
+// The HOME override keeps settings.DefaultPath() away from the real user
+// settings file: this test must pass or fail on the recorded path alone.
+func TestRunDoctorUsesTheRecordedSettingsPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(store.HomeEnv, home)
+	t.Setenv("HOME", t.TempDir())
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	if err := install(home, installOpts(settingsPath), &bytes.Buffer{}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	var stdout bytes.Buffer
+	err := runDoctor(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	type outcome struct {
+		failed  bool
+		healthy bool
+	}
+	got := outcome{err != nil, strings.HasSuffix(stdout.String(), "\nHEALTHY\n")}
+	if want := (outcome{false, true}); got != want {
+		t.Fatalf("got %+v, want %+v; stdout:\n%s", got, want, stdout.String())
 	}
 }
