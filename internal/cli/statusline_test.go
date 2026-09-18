@@ -106,7 +106,18 @@ func TestStatuslineWithoutConfigExitsQuietly(t *testing.T) {
 	t.Setenv(store.HomeEnv, home)
 	var stdout bytes.Buffer
 	err := runStatusline(t.Context(), BuildInfo{}, IO{Stdin: bytes.NewReader(fixture(t, "full.json")), Stdout: &stdout, Stderr: &bytes.Buffer{}}, func(string) error { return nil })
-	if err != nil || stdout.Len() != 0 {
-		t.Fatalf("err=%v stdout=%q; want nil and nothing written", err, stdout.String())
+	entries, readErr := os.ReadDir(home)
+	if readErr != nil {
+		t.Fatalf("read home: %v", readErr)
+	}
+	type quietExit struct {
+		err     bool
+		stdout  string
+		entries int
+	}
+	got := quietExit{err: err != nil, stdout: stdout.String(), entries: len(entries)}
+	want := quietExit{}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }

@@ -26,12 +26,13 @@ func runStatusline(ctx context.Context, info BuildInfo, streams IO, spawn func(h
 	if err != nil {
 		return nil
 	}
-	logger, closeLog := openLogger(home)
-	defer closeLog()
 	cfg, err := config.Load(home)
 	if errors.Is(err, config.ErrMissing) {
+		// Before install there is no config; the home directory stays untouched.
 		return nil
 	}
+	logger, closeLog := openLogger(home)
+	defer closeLog()
 	if err != nil {
 		logger.Error("config unusable", "error", err.Error())
 		if rErr := renderer.Run(ctx, cfg.Renderer.Command, payload, streams.Stdout, streams.Stderr); rErr != nil {
