@@ -18,7 +18,6 @@ Status: Draft · Partial · 2026-09-17 · One meaning per term. Every spec page 
 | **Spool** | The `pending/` directory of event files awaiting delivery, plus `dead-letter/` for events that failed permanently. |
 | **Flusher** | `gaugewire flush`: a detached, short-lived process that delivers due events to sinks and exits. |
 | **Sink** | A destination adapter with `ID()` and `PublishBatch(ctx, snapshots)`. Databox is the first. |
-| **Router** | Fans one batch out to every enabled sink and records per-sink delivery state. |
 | **Renderer** | The user's previous status-line command, which Gaugewire runs with the exact stdin bytes and whose stdout it forwards. |
 | **Hot path** | Everything `gaugewire statusline` does between reading stdin and exiting. |
 | **Home directory** | The one directory holding config, state, locks, spool and logs. `os.UserConfigDir()/gaugewire` or `GAUGEWIRE_HOME`. |

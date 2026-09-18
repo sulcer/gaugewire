@@ -20,7 +20,7 @@ flowchart TB
         SRC["source/claude<br/>stdin JSON to Observation"]
         REN[renderer<br/>run original command]
         STO[store<br/>home dir, atomic writes,<br/>locks, state, spool]
-        SNK[sink<br/>Sink, Router]
+        SNK[sink<br/>Sink, Flusher]
         DBX[sink/databox<br/>v1 client, records]
     end
     Q[quota<br/>Snapshot, Window,<br/>Reduce, Decide]
@@ -44,7 +44,7 @@ internal/quota/              Snapshot, Window, WindowStatus, Reduce, Decide. Pur
 internal/source/claude/      status-line JSON → Observation, version gate
 internal/store/              home dir, atomic write, flock locks, state.json, pending/, dead-letter/
 internal/renderer/           run the saved command with exact stdin, forward stdout
-internal/sink/               Sink interface, Router, per-sink delivery bookkeeping
+internal/sink/               Sink interface, Flusher, per-sink delivery bookkeeping
 internal/sink/databox/       v1 client, dataset records, error classification, bootstrap calls
 internal/config/             config.json load, validate, save
 internal/cli/                one file per subcommand; status and doctor rendering
