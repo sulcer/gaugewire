@@ -23,7 +23,7 @@ type observeResult struct {
 	Spawn     bool
 }
 
-// observe is the locked part of the hot path: parse, reduce, decide, spool,
+// observe is the observing part of the hot path: parse, reduce, decide, spool,
 // persist. Every failure is logged and swallowed; the renderer must never wait.
 func observe(ctx context.Context, home string, cfg config.Config, payload []byte, now time.Time, info BuildInfo, logger *slog.Logger) observeResult {
 	obs, issues, err := claude.Parse(bytes.NewReader(payload), now)
@@ -43,11 +43,11 @@ func observe(ctx context.Context, home string, cfg config.Config, payload []byte
 		logger.Warn("observation dropped", "reason", err.Error())
 		return observeResult{}
 	}
-	res, targets := reduceAndSpool(home, cfg, obs, now, info, logger)
+	res, _ := reduceAndSpool(home, cfg, obs, now, info, logger)
 	if unlockErr := unlock(); unlockErr != nil {
 		logger.Warn("unlock failed", "error", unlockErr.Error())
 	}
-	if !res.Spawn && len(targets) > 0 {
+	if !res.Spawn {
 		res.Spawn = hasDueWork(home, now)
 	}
 	return res

@@ -11,8 +11,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
-var _ = spawnFlusher // wired into the statusline command in the next task
-
 // spawnFlusher starts `gaugewire flush` detached from this process: its own
 // session, stdin from the null device, stdout and stderr appended to the log
 // file, so Claude Code's stdout pipe closes as soon as the hot path exits.

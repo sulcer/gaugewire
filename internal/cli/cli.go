@@ -28,11 +28,14 @@ var ErrUsage = errors.New("usage: gaugewire <command>\n\ncommands:\n  statusline
 
 // Run executes the command named by args.
 func Run(ctx context.Context, args []string, info BuildInfo, streams IO) error {
-	_ = ctx // wired to statusline and flush in the next tasks
 	if len(args) == 0 {
 		return ErrUsage
 	}
 	switch args[0] {
+	case "statusline":
+		return runStatusline(ctx, info, streams, spawnFlusher)
+	case "flush":
+		return runFlush(ctx, args[1:], info, streams)
 	case "version":
 		return runVersion(info, streams.Stdout)
 	default:
