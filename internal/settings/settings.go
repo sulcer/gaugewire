@@ -8,12 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrNotObject means the document's top level is not a JSON object.
 var ErrNotObject = errors.New("settings: top level is not a JSON object")
+
+// errTrailingData means the document continues after the top-level object, so
+// rewriting it would silently drop whatever follows.
+var errTrailingData = errors.New("settings: trailing data after the object")
 
 // Member is the result of Get: the exact value bytes of a top-level member
 // and where they sit in the document.
@@ -21,6 +27,7 @@ type Member struct {
 	Found bool
 	Value json.RawMessage
 
+	key        string
 	keyStart   int // offset of the key's opening quote
 	valueStart int // offset of the value's first byte
 	valueEnd   int // offset just past the value's last byte
@@ -43,7 +50,7 @@ func Get(object []byte, key string) (Member, error) {
 		return Member{}, err
 	}
 	for i, m := range l.members {
-		if memberKey(object, m) == key {
+		if m.key == key {
 			return l.members[i], nil
 		}
 	}
@@ -58,7 +65,7 @@ func Set(object []byte, key string, value json.RawMessage) ([]byte, error) {
 		return nil, err
 	}
 	for _, m := range l.members {
-		if memberKey(object, m) == key {
+		if m.key == key {
 			return splice(object, m.valueStart, m.valueEnd, value), nil
 		}
 	}
@@ -87,7 +94,7 @@ func Delete(object []byte, key string) ([]byte, error) {
 		return nil, err
 	}
 	for i, m := range l.members {
-		if memberKey(object, m) != key {
+		if m.key != key {
 			continue
 		}
 		switch {
@@ -110,6 +117,9 @@ func Load(path string) ([]byte, bool, error) {
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("read settings: %w", err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return []byte("{}"), true, nil
 	}
 	return data, true, nil
 }
@@ -135,15 +145,17 @@ func scan(object []byte) (layout, error) {
 	l := layout{afterBrace: int(dec.InputOffset()), firstKey: -1}
 	l.lastEnd = l.afterBrace
 	for dec.More() {
-		if _, err := dec.Token(); err != nil {
+		keyTok, err := dec.Token()
+		if err != nil {
 			return layout{}, fmt.Errorf("settings: %w", err)
 		}
+		name, _ := keyTok.(string)
 		keyEnd := int(dec.InputOffset())
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
 			return layout{}, fmt.Errorf("settings: %w", err)
 		}
-		m := Member{Found: true, Value: raw, prevEnd: l.lastEnd}
+		m := Member{Found: true, Value: raw, key: name, prevEnd: l.lastEnd}
 		m.keyStart = skip(object, l.lastEnd, " \t\r\n,")
 		m.valueStart = skip(object, keyEnd, " \t\r\n:")
 		m.valueEnd = m.valueStart + len(raw)
@@ -157,33 +169,14 @@ func scan(object []byte) (layout, error) {
 		return layout{}, fmt.Errorf("settings: %w", err)
 	}
 	l.closeBrace = int(dec.InputOffset()) - 1
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return layout{}, errTrailingData
+	}
 	return l, nil
 }
 
-func memberKey(object []byte, m Member) string {
-	var key string
-	if err := json.Unmarshal(object[m.keyStart:keyEndOf(object, m)], &key); err != nil {
-		return ""
-	}
-	return key
-}
-
-// keyEndOf finds the offset just past the key string that starts at keyStart,
-// honouring backslash escapes.
-func keyEndOf(object []byte, m Member) int {
-	for i := m.keyStart + 1; i < len(object); i++ {
-		switch object[i] {
-		case '\\':
-			i++
-		case '"':
-			return i + 1
-		}
-	}
-	return len(object)
-}
-
 func skip(object []byte, from int, set string) int {
-	for from < len(object) && bytes.IndexByte([]byte(set), object[from]) >= 0 {
+	for from < len(object) && strings.IndexByte(set, object[from]) >= 0 {
 		from++
 	}
 	return from

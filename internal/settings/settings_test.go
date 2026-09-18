@@ -128,9 +128,16 @@ func TestGetReturnsTheExactValueBytes(t *testing.T) {
 
 func TestGetOnAMissingMember(t *testing.T) {
 	t.Parallel()
-	got, err := Get(read(t, "none.json"), "statusLine")
-	if err != nil || got.Found || got.Value != nil {
-		t.Fatalf("got %+v err %v, want not found", got, err)
+	member, err := Get(read(t, "none.json"), "statusLine")
+	type outcome struct {
+		found bool
+		value string
+		err   bool
+	}
+	got := outcome{member.Found, string(member.Value), err != nil}
+	want := outcome{false, "", false}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
@@ -147,6 +154,61 @@ func TestOperationsReportMalformedJSON(t *testing.T) {
 	_, err := Set([]byte(`{"statusLine": `), "statusLine", installed)
 	if err == nil || errors.Is(err, ErrNotObject) {
 		t.Fatalf("got %v, want a decode error", err)
+	}
+}
+
+func TestOperationsRejectTrailingData(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{"garbage after the object", `{"a":1} oops`},
+		{"a second object", `{"a":1}{"b":2}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Get([]byte(tc.input), "a")
+			type outcome struct {
+				failed      bool
+				notAnObject bool
+			}
+			got := outcome{err != nil, errors.Is(err, ErrNotObject)}
+			want := outcome{true, false}
+			if got != want {
+				t.Fatalf("got %+v (err %v), want %+v", got, err, want)
+			}
+		})
+	}
+}
+
+func TestLoadTreatsAnEmptyFileAsAnEmptyObject(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"no bytes", ""},
+		{"whitespace only", " \n\t "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "settings.json")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			data, existed, err := Load(path)
+			type outcome struct {
+				data    string
+				existed bool
+				err     bool
+			}
+			got := outcome{string(data), existed, err != nil}
+			want := outcome{"{}", true, false}
+			if got != want {
+				t.Fatalf("got %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 
@@ -171,9 +233,14 @@ func TestDefaultPathIsUnderTheUserHome(t *testing.T) {
 	if err != nil {
 		t.Skip("no user home")
 	}
-	got, err := DefaultPath()
-	want := filepath.Join(home, ".claude", "settings.json")
-	if err != nil || got != want {
-		t.Fatalf("got %q err %v, want %q", got, err, want)
+	path, err := DefaultPath()
+	type outcome struct {
+		path string
+		err  bool
+	}
+	got := outcome{path, err != nil}
+	want := outcome{filepath.Join(home, ".claude", "settings.json"), false}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
