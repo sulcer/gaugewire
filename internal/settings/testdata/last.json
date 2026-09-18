@@ -1,0 +1,4 @@
+{
+	"model": "claude-sonnet-5",
+	"statusLine": {"type": "command", "command": "powershell -NoProfile -File C:/Users/me/.claude/statusline.ps1"}
+}

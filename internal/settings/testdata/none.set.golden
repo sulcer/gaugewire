@@ -1,0 +1,7 @@
+{
+  "model": "claude-sonnet-5",
+  "permissions": {
+    "allow": ["Bash(git diff *)"]
+  },
+  "statusLine": {"type":"command","command":"/opt/gaugewire statusline"}
+}

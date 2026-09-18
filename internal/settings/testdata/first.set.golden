@@ -1,0 +1,4 @@
+{
+  "statusLine": {"type":"command","command":"/opt/gaugewire statusline"},
+  "model": "claude-sonnet-5"
+}
