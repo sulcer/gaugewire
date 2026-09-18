@@ -27,21 +27,25 @@ type Result struct {
 	Retried      int
 	DeadLettered int
 	Quarantined  int
+	Requeued     int
 	Skipped      bool
 }
 
 // Flusher delivers due pending events to every sink, in chronological order,
 // chunked, with backoff on transient failures and dead letters on permanent ones.
 type Flusher struct {
-	Home   string
-	Sinks  []Sink
-	Now    func() time.Time
-	Random func() float64
-	Logger *slog.Logger
+	Home    string
+	Sinks   []Sink
+	Now     func() time.Time
+	Random  func() float64
+	Logger  *slog.Logger
+	Requeue bool
 }
 
 // Run performs one pass and exits. It never sleeps until the next attempt; a
-// later status-line invocation relaunches the flusher when work is due.
+// later status-line invocation relaunches the flusher when work is due. Requeue
+// moves dead letters back first, under the same lock, so a concurrent
+// dead-letter can never lose an event.
 func (f Flusher) Run(ctx context.Context) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, RunTimeout)
 	defer cancel()
@@ -56,6 +60,14 @@ func (f Flusher) Run(ctx context.Context) (Result, error) {
 	defer func() { _ = unlock() }()
 
 	var res Result
+	now := f.Now().UTC()
+	if f.Requeue {
+		requeued, requeueErr := store.Requeue(f.Home, now)
+		res.Requeued = requeued
+		if requeueErr != nil {
+			return res, requeueErr
+		}
+	}
 	moved, err := store.Quarantine(f.Home)
 	res.Quarantined = len(moved)
 	for _, name := range moved {
@@ -68,7 +80,6 @@ func (f Flusher) Run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	now := f.Now().UTC()
 	var runErr error
 	for _, s := range f.Sinks {
 		if err := f.deliver(ctx, s, events, now, &res); err != nil {

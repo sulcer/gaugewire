@@ -37,15 +37,11 @@ func runFlush(ctx context.Context, args []string, _ BuildInfo, streams IO) error
 	if err != nil {
 		return err
 	}
-	if *requeue {
-		moved, err := store.Requeue(home, time.Now())
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(streams.Stdout, "requeued %d events\n", moved)
-	}
-	flusher := sink.Flusher{Home: home, Sinks: buildSinks(cfg, logger), Now: time.Now, Random: rand.Float64, Logger: logger} //nolint:gosec // G404: jitter, not security
+	flusher := sink.Flusher{Home: home, Sinks: buildSinks(cfg, logger), Now: time.Now, Random: rand.Float64, Logger: logger, Requeue: *requeue} //nolint:gosec // G404: jitter, not security
 	res, runErr := flusher.Run(ctx)
+	if *requeue {
+		fmt.Fprintf(streams.Stdout, "requeued %d events\n", res.Requeued)
+	}
 	fmt.Fprintf(streams.Stdout, "delivered %d, retried %d, dead-lettered %d, quarantined %d\n", res.Delivered, res.Retried, res.DeadLettered, res.Quarantined)
 	return runErr
 }

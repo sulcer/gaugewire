@@ -288,3 +288,29 @@ func TestRunQuarantinesAnUnreadableFileFirst(t *testing.T) {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestRunRequeuesDeadLettersUnderTheLock(t *testing.T) {
+	t.Parallel()
+	home := flusherHome(t)
+	spool(t, home, "evt-1", now.Add(-time.Minute), "a")
+	pending, listErr := store.ListPending(home)
+	if listErr != nil {
+		t.Fatalf("ListPending: %v", listErr)
+	}
+	if dlErr := store.DeadLetter(home, pending[0], "http 401", now); dlErr != nil {
+		t.Fatalf("DeadLetter: %v", dlErr)
+	}
+	a := &fakeSink{id: "a"}
+	f := Flusher{Home: home, Sinks: []Sink{a}, Now: func() time.Time { return now }, Random: func() float64 { return 0.5 }, Logger: logging.Discard(), Requeue: true}
+	res, err := f.Run(t.Context())
+	got := snapshotSpool(t, home, res, err, a)
+	want := spoolState{
+		result:    Result{Delivered: 1, Requeued: 1},
+		pending:   map[string]map[string]store.DeliveryState{},
+		batches:   [][]string{{"evt-1"}},
+		lastFlush: &store.FlushRecord{At: now, OK: true},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spoolState{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
