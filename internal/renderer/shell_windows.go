@@ -12,3 +12,7 @@ func shellCommand(command string) (string, []string) {
 	}
 	return "powershell", []string{"-NoProfile", "-Command", command}
 }
+
+// isolate does nothing on Windows: cancellation terminates the shell process
+// and WaitDelay releases the pipes a grandchild may still hold.
+func isolate(*exec.Cmd) {}

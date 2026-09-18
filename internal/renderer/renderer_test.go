@@ -64,7 +64,7 @@ func TestRunStopsWhenTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	err := Run(ctx, "sleep 5", nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err := Run(ctx, "sleep 5; true", nil, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || time.Since(started) > 3*time.Second {
 		t.Fatalf("err=%v after %s; want an error well before 5 s", err, time.Since(started))
 	}

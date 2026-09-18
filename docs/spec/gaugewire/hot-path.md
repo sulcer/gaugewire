@@ -48,9 +48,12 @@ flowchart TD
 1. Gaugewire writes zero bytes of its own to stdout, ever. Renderer stderr passes through.
 2. No network on this path.
 3. The renderer runs through `/bin/sh -c` on Unix and, on Windows, through `bash -c` when
-   `bash` is on `PATH`, else `powershell -NoProfile -Command`. The renderer runs as a child in
-   Gaugewire's process group; Gaugewire kills it when it receives SIGINT or SIGTERM. Whether
-   Claude Code signals the process or the group is not documented; both are covered.
+   `bash` is on `PATH`, else `powershell -NoProfile -Command`. On Unix the shell gets its own
+   process group and Gaugewire kills that whole group when it receives SIGINT or SIGTERM, so a
+   command the shell forked rather than exec'd (Linux `/bin/sh` does this) dies with it. On
+   Windows only the shell process is terminated. In both cases Gaugewire stops waiting for the
+   output pipes half a second after the shell is gone. Whether Claude Code signals the process
+   or the group is not documented; Gaugewire handles the signal itself either way.
 4. The flusher is spawned with stdin and stdout from and to the null device and stderr
    redirected to the log file, in its own session (`Setsid` on Unix, `CREATE_NEW_PROCESS_GROUP |
    DETACHED_PROCESS` on Windows). If spawning fails the spool stays intact and a later

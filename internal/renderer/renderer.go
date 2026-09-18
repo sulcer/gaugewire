@@ -9,11 +9,18 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// waitDelay bounds how long Run waits for the output pipes after the shell has
+// exited or been killed, so a grandchild that inherited them cannot hold the
+// status line open.
+const waitDelay = 500 * time.Millisecond
 
 // Run executes command through the platform shell with stdin as its input,
 // streaming stdout and stderr to the given writers. An empty command is a
-// no-op. The child shares this process's group, so cancellation reaches it.
+// no-op. On Unix the shell gets its own process group and cancellation kills
+// the whole group, so a command the shell forked rather than exec'd dies too.
 func Run(ctx context.Context, command string, stdin []byte, stdout, stderr io.Writer) error {
 	if strings.TrimSpace(command) == "" {
 		return nil
@@ -23,6 +30,8 @@ func Run(ctx context.Context, command string, stdin []byte, stdout, stderr io.Wr
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	cmd.WaitDelay = waitDelay
+	isolate(cmd)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("renderer: %w", err)
 	}
