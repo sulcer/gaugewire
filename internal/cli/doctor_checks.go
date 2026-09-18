@@ -129,8 +129,8 @@ func checkHomeDirectory(home string) check {
 	if err != nil {
 		return check{name: name, detail: "spool not writable: " + err.Error()}
 	}
+	defer func() { _ = os.Remove(probe.Name()) }()
 	_ = probe.Close()
-	_ = os.Remove(probe.Name())
 	return check{name: name, ok: true, detail: home}
 }
 

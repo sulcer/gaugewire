@@ -183,9 +183,6 @@ func TestSamplePayloadParses(t *testing.T) {
 }
 
 func TestRunDoctorExitsUnhealthy(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("needs cat")
-	}
 	home := t.TempDir()
 	t.Setenv(store.HomeEnv, home)
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")

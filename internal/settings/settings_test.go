@@ -15,11 +15,11 @@ var installed = json.RawMessage(`{"type":"command","command":"/opt/gaugewire sta
 
 var fixtures = []string{"empty", "none", "only", "first", "middle", "last", "compact"}
 
-func read(t *testing.T, name string) []byte {
-	t.Helper()
+func read(tb testing.TB, name string) []byte {
+	tb.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
-		t.Fatalf("read %s: %v", name, err)
+		tb.Fatalf("read %s: %v", name, err)
 	}
 	return data
 }
@@ -243,4 +243,47 @@ func TestDefaultPathIsUnderTheUserHome(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
+}
+
+// FuzzSetGetDelete asserts the two properties install and uninstall rely on:
+// what Set writes, Get reads back exactly, and deleting a member Set had to
+// create restores the original bytes.
+func FuzzSetGetDelete(f *testing.F) {
+	for _, name := range fixtures {
+		f.Add(read(f, name+".json"))
+	}
+	f.Fuzz(func(t *testing.T, object []byte) {
+		member, err := Get(object, "statusLine")
+		if err != nil {
+			return
+		}
+		set, err := Set(object, "statusLine", installed)
+		if err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		got, err := Get(set, "statusLine")
+		if err != nil || string(got.Value) != string(installed) {
+			t.Fatalf("Get after Set on %q gave %q, err %v", object, got.Value, err)
+		}
+		if member.Found {
+			return
+		}
+		deleted, err := Delete(set, "statusLine")
+		if err != nil {
+			t.Fatalf("Delete after Set on %q: %v", object, err)
+		}
+		var members map[string]json.RawMessage
+		if json.Unmarshal(object, &members) == nil && len(members) == 0 {
+			// Set writes the first member of an object in the document's own
+			// layout, which drops whatever whitespace stood between the braces;
+			// only the member's disappearance survives that.
+			if again, getErr := Get(deleted, "statusLine"); getErr != nil || again.Found {
+				t.Fatalf("Delete after Set on %q left %q, err %v", object, deleted, getErr)
+			}
+			return
+		}
+		if string(deleted) != string(object) {
+			t.Fatalf("Delete after Set on %q gave %q", object, deleted)
+		}
+	})
 }

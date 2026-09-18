@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,10 @@ import (
 )
 
 var installAt = time.Date(2026, 9, 18, 10, 30, 0, 0, time.UTC)
+
+// generatedUUID masks the node and account ids install prints, so stdout is one
+// comparable value.
+var generatedUUID = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 func installOpts(settingsPath string) installOptions {
 	return installOptions{
@@ -48,7 +53,7 @@ func snapshotInstall(t *testing.T, home, settingsPath string, err error, stdout 
 		out.backup = string(data)
 	}
 	if cfg, loadErr := config.Load(home); loadErr == nil {
-		cfg.Node.ID, cfg.Account.ID = "", "" // generated; asserted separately
+		cfg.Node.ID, cfg.Account.ID = "", "" // generated; stdout carries them as <uuid>
 		out.cfg = cfg
 	}
 	return out
@@ -76,7 +81,7 @@ func TestInstallSplicesTheStatusLineAndSavesTheOriginal(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	err := install(home, installOpts(settingsPath), &stdout)
-	got := snapshotInstall(t, home, settingsPath, err, stdout.String())
+	got := snapshotInstall(t, home, settingsPath, err, generatedUUID.ReplaceAllString(stdout.String(), "<uuid>"))
 	cfg := config.Default()
 	cfg.Node = config.Identity{Alias: "mac-mini-01"}
 	cfg.Account = config.Identity{Alias: "claude-01"}
@@ -95,16 +100,12 @@ func TestInstallSplicesTheStatusLineAndSavesTheOriginal(t *testing.T) {
 			"backup:       " + settingsPath + ".gaugewire-backup-20260918-103000",
 			"status line:  /opt/gaugewire/bin/gaugewire statusline",
 			"renderer:     bash ~/.claude/statusline-command.sh",
+			"node:         mac-mini-01 <uuid>",
+			"account:      claude-01 <uuid>",
 		}, "\n") + "\n",
 	}
-	// node and account lines carry generated ids; compare them by prefix below.
-	gotLines := strings.Split(strings.TrimSpace(got.stdout), "\n")
-	got.stdout = strings.Join(gotLines[:4], "\n") + "\n"
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(installed{}), cmp.Transformer("raw", compactJSON)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
-	}
-	if len(gotLines) != 6 || !strings.HasPrefix(gotLines[4], "node:         mac-mini-01 ") || !strings.HasPrefix(gotLines[5], "account:      claude-01 ") {
-		t.Fatalf("identity lines: %q", gotLines[4:])
 	}
 }
 
