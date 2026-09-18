@@ -75,3 +75,10 @@ Go 1.27 runs the v1 API on the v2 engine anyway.
 
 A flow deserves a picture, and a picture that lives as text is one an agent can author, review
 and diff, and one that cannot go stale silently in a binary blob. GitHub renders Mermaid inline.
+
+## Context only where something can block
+
+A `context.Context` is required for a network call and for a wait on another process, such as an
+advisory file lock, because either can hang and only a context gives the caller a way to time it
+out or cancel it. A local file read or write is neither: it returns quickly or fails outright, so
+threading a context through it adds a parameter nothing ever cancels.

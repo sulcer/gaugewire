@@ -46,7 +46,9 @@ temporary file, `fsync`, atomic rename; a crash cannot corrupt `state.json` or a
 
 1. Try `flush.lock` without blocking; if held, exit 0.
 2. If a pending file cannot be decoded, the flusher moves it to `dead-letter/` with reason
-   `unreadable: <error>` and continues; a corrupt file never blocks the others.
+   `unreadable: <error>` and continues; a corrupt file never blocks the others (the same applies
+   to `dead-letter/` during a requeue), and the move uses a rename because an undecodable file
+   has no content to rewrite.
 3. For each enabled sink, take the events whose `delivery[sink].nextAttemptAt ≤ now`, in order,
    in chunks of at most 100.
 4. Success removes the sink from each event's `delivery`; a file with no sinks left is deleted.

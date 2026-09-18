@@ -1,13 +1,14 @@
 # Data contract
 
-Status: Draft · Built · 2026-09-17 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
+Status: Draft · Partial · 2026-09-17 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
 
 ## At a glance
 
 Sinks never see Anthropic's raw schema. They receive `QuotaSnapshot v1`, a versioned object
 owned by this project. Everything on disk is JSON written atomically. Only the four quota fields
 and the Claude Code version are ever read from the status-line input; nothing else from it is
-persisted.
+persisted. The snapshot, state and spooled-event shapes are built; `config.json` and the identity
+wiring are not.
 
 ## Source input
 
