@@ -1,0 +1,12 @@
+✓ configuration: valid
+✓ claude code version: 2.1.274 (minimum 2.1.251)
+✓ status-line integration: /opt/gaugewire/bin/gaugewire statusline
+✓ overrides: none in <workDir>
+✓ renderer: cat ran
+✓ identity: mac-mini-01 / claude-01
+✓ home directory: <home>
+✓ quota windows: 5h observed, 7d observed, last observation 2m ago
+✓ refreshInterval: not set
+✓ spool: 0 pending, 0 dead-lettered
+
+HEALTHY

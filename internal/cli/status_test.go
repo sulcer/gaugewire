@@ -37,7 +37,7 @@ func TestRenderStatusObserved(t *testing.T) {
 	state.LastObservedAt = &captured
 	state.LastPublished = &quota.Published{EventID: "e", CapturedAt: captured, Windows: state.Windows}
 	state.LastFlush = &store.FlushRecord{At: now.Add(-time.Minute), OK: true}
-	got := renderStatus(testConfig(databoxSink()), state, 1, 0, now, zone)
+	got := renderStatus(testConfig(databoxSink()), state, 1, 0, "", now, zone)
 	if want := golden(t, "status_observed.golden"); got != want {
 		t.Fatalf("status mismatch\n got:\n%s\nwant:\n%s", got, want)
 	}
@@ -45,8 +45,17 @@ func TestRenderStatusObserved(t *testing.T) {
 
 func TestRenderStatusFresh(t *testing.T) {
 	t.Parallel()
-	got := renderStatus(testConfig(databoxSink()), store.NewState(), 0, 0, time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
+	got := renderStatus(testConfig(databoxSink()), store.NewState(), 0, 0, "", time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
 	if want := golden(t, "status_fresh.golden"); got != want {
+		t.Fatalf("status mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRenderStatusShowsTheNewestDeadLetterReason(t *testing.T) {
+	t.Parallel()
+	reason := "databox-main: permanent (invalid_api_key): 401"
+	got := renderStatus(testConfig(databoxSink()), store.NewState(), 0, 1, reason, time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC), time.UTC)
+	if want := golden(t, "status_deadletters.golden"); got != want {
 		t.Fatalf("status mismatch\n got:\n%s\nwant:\n%s", got, want)
 	}
 }

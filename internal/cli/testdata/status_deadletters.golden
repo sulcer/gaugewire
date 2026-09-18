@@ -1,0 +1,15 @@
+Gaugewire
+
+Node:     mac-mini-01
+Account:  claude-01
+
+5h:       unknown
+7d:       unknown
+
+Last observation:  never
+Last publish:      never
+
+Pending events:    0
+Dead letters:      1 · newest: databox-main: permanent (invalid_api_key): 401
+
+databox-main:      never flushed
