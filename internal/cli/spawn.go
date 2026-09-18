@@ -12,8 +12,10 @@ import (
 )
 
 // spawnFlusher starts `gaugewire flush` detached from this process: its own
-// session, stdin from the null device, stdout and stderr appended to the log
-// file, so Claude Code's stdout pipe closes as soon as the hot path exits.
+// session, stdin and stdout from and to the null device, stderr appended to the
+// log file, so Claude Code's stdout pipe closes as soon as the hot path exits.
+// The flusher's own summary line is plain text and would break the JSON log; its
+// counts reach the log through the "flush finished" record instead.
 func spawnFlusher(home string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -30,7 +32,7 @@ func spawnFlusher(home string) error {
 	cmd := exec.CommandContext(context.Background(), exe, "flush")
 	cmd.Env = append(os.Environ(), store.HomeEnv+"="+home)
 	cmd.Stdin = nil
-	cmd.Stdout = out
+	cmd.Stdout = nil
 	cmd.Stderr = out
 	cmd.SysProcAttr = detachAttrs()
 	if err := cmd.Start(); err != nil {
