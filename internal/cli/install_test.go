@@ -340,6 +340,56 @@ func TestInstallRefusesAnAccountIDThatIsNotAUUID(t *testing.T) {
 	}
 }
 
+func TestInstallWithForceAndAccountIDJoinsTheSubscription(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"statusLine":{"type":"command","command":"cat"}}`), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := install(home, installOpts(settingsPath), &bytes.Buffer{}); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	opts := installOpts(settingsPath)
+	opts.force = true
+	opts.accountID = "5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b"
+	var stdout bytes.Buffer
+	err := install(home, opts, &stdout)
+	cfg, loadErr := config.Load(home)
+	type outcome struct {
+		err, loadErr        bool
+		accountID, renderer string
+		original            string
+		printsAccountLine   bool
+	}
+	got := outcome{
+		err != nil, loadErr != nil, cfg.Account.ID, cfg.Renderer.Command, compactJSON(cfg.Install.OriginalStatusLine),
+		strings.Contains(stdout.String(), "account:      claude-01 5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b\n"),
+	}
+	want := outcome{false, false, "5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b", "cat", `{"type":"command","command":"cat"}`, true}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestInstallRefusesAnInvalidAccountIDBeforeTheInstallRecordCheck(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(settingsPath, []byte(`{"statusLine":{"type":"command","command":"/opt/gaugewire/bin/gaugewire statusline"}}`), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	opts := installOpts(settingsPath)
+	opts.force = true
+	opts.accountID = "not-a-uuid"
+	err := install(home, opts, &bytes.Buffer{})
+	type outcome struct{ invalidID, noRecord bool }
+	got := outcome{errors.Is(err, ErrInvalidAccountID), errors.Is(err, ErrNoInstallRecord)}
+	if want := (outcome{true, false}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
 func TestInstalledCommandQuotesOnlyPathsWithSpaces(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

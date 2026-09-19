@@ -35,7 +35,8 @@ due. An enabled sink that cannot be built (no API key, no dataset ids) fails the
 
 ```mermaid
 flowchart TD
-    A[load or create config.json<br/>generate node.id, account.id if missing] --> B["read settings.json<br/>missing: empty object"]
+    A[load or create config.json<br/>generate node.id, account.id if missing] -->|--account-id not a UUID| X0[refuse before any write]
+    A --> B["read settings.json<br/>missing: empty object"]
     B --> C{"statusLine.command<br/>already gaugewire?"}
     C -->|yes, no install record| X1[refuse, even with --force]
     C -->|yes, no --force| X2[refuse: pass --force]
@@ -70,7 +71,11 @@ crash between the two writes — still knows how to get back to the user's origi
 A status line already pointing at Gaugewire is refused unless `--force`; it is refused outright,
 `--force` or not, when `config.json` has no install record to restore from, and the message
 points at the newest `.gaugewire-backup-*` file to restore by hand. `--force` keeps the saved
-original and only refreshes the installed command. The backup is
+original and refreshes the installed command; with `--account-id` it also replaces the saved
+account id, which is how an installed machine joins a subscription. An `--account-id` that is
+not a UUID is refused before anything is written, settings file or `config.json`. Install's
+`--account-id` is Gaugewire's subscription id; the unrelated numeric Databox account is
+`databox bootstrap --account-id`. The backup is
 `settings.json.gaugewire-backup-<UTC timestamp>` with mode 0600, suffixed `-2`, `-3` and so on
 when a second install lands in the same second. `--settings` is resolved and stored as an
 absolute path. A `statusLine` whose value is not a JSON object is refused before anything is
