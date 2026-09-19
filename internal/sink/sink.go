@@ -12,11 +12,17 @@ import (
 // MaxBatch is the largest number of snapshots handed to a sink in one call.
 const MaxBatch = 100
 
+// Delivery is one spooled event handed to a sink: its type and the snapshot.
+type Delivery struct {
+	EventType quota.EventType
+	Snapshot  quota.Snapshot
+}
+
 // Sink is a destination for snapshots. Implementations classify failures with
 // NewRetryable and NewPermanent so the flusher can decide what to do.
 type Sink interface {
 	ID() string
-	PublishBatch(ctx context.Context, snapshots []quota.Snapshot) error
+	PublishBatch(ctx context.Context, deliveries []Delivery) error
 }
 
 // Class says whether a failed delivery should be retried or dead-lettered.

@@ -1,6 +1,6 @@
 # Glossary
 
-Status: Draft · Partial · 2026-09-17 · One meaning per term. Every spec page links a term here on first use.
+Status: Draft · Partial · 2026-09-19 · One meaning per term. Every spec page links a term here on first use.
 
 | Term | Meaning |
 |---|---|
@@ -17,7 +17,8 @@ Status: Draft · Partial · 2026-09-17 · One meaning per term. Every spec page 
 | **Dedupe** | The decision whether the reduced state differs enough from the last published state to publish again. |
 | **Spool** | The `pending/` directory of event files awaiting delivery, plus `dead-letter/` for events that failed permanently. |
 | **Flusher** | `gaugewire flush`: a detached, short-lived process that delivers due events to sinks and exits. |
-| **Sink** | A destination adapter with `ID()` and `PublishBatch(ctx, snapshots)`. Databox is the first. |
+| **Delivery** | One spooled event handed to a sink: its event type plus the snapshot. |
+| **Sink** | A destination adapter with `ID()` and `PublishBatch(ctx, deliveries)`. Databox is the first. |
 | **Renderer** | The user's previous status-line command, which Gaugewire runs with the exact stdin bytes and whose stdout it forwards. |
 | **Hot path** | Everything `gaugewire statusline` does between reading stdin and exiting. |
 | **Home directory** | The one directory holding config, state, locks, spool and logs. `os.UserConfigDir()/gaugewire` or `GAUGEWIRE_HOME`. |

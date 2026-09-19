@@ -1,6 +1,6 @@
 # Gaugewire
 
-Status: Draft · Partial · 2026-09-17 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
+Status: Draft · Partial · 2026-09-19 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
 
 ## At a glance
 
@@ -85,7 +85,9 @@ status line. None of these are added opportunistically.
 
 - Is usage monotonic within one reset window? The staleness guard assumes so; the acceptance
   test confirms it.
-- Does dataset creation accept a column schema? The sink works either way; bootstrap settles it.
+- Are column types inferred from the first ingestion? Dataset creation does not document a
+  schema field; the sink sends typed-looking values either way, and the acceptance test settles
+  it.
 
 ---
 Synthesized from (frozen research): [`2026-09-17-claude-quota-observer-spec-v1.md`](../../research/2026-09-17-claude-quota-observer-spec-v1.md), [`2026-09-17-design-conversation.md`](../../research/2026-09-17-design-conversation.md).

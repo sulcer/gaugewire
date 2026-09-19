@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/sulcer/gaugewire/internal/quota"
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
 // FlushLockFile guarantees one flusher per machine.
 const FlushLockFile = "flush.lock"
 
-// RequestTimeout bounds one PublishBatch call.
+// RequestTimeout bounds one HTTP request a sink makes.
 const RequestTimeout = 15 * time.Second
+
+// BatchTimeout bounds one PublishBatch call, which may make several requests.
+const BatchTimeout = 3 * RequestTimeout
 
 // RunTimeout bounds one flusher run.
 const RunTimeout = 2 * time.Minute
@@ -40,6 +43,10 @@ type Flusher struct {
 	Random  func() float64
 	Logger  *slog.Logger
 	Requeue bool
+	// SetupErr is a configuration problem found before the run, such as a sink
+	// that could not be built; it fails the run so lastFlush and the exit code
+	// show it.
+	SetupErr error
 }
 
 // Run performs one pass and exits. It never sleeps until the next attempt; a
@@ -86,6 +93,7 @@ func (f Flusher) Run(ctx context.Context) (Result, error) {
 			runErr = errors.Join(runErr, err)
 		}
 	}
+	runErr = errors.Join(f.SetupErr, runErr)
 	f.recordFlush(ctx, now, runErr)
 	f.Logger.Info("flush finished", "delivered", res.Delivered, "retried", res.Retried, "deadLettered", res.DeadLettered, "quarantined", res.Quarantined)
 	return res, runErr
@@ -101,12 +109,12 @@ func (f Flusher) deliver(ctx context.Context, s Sink, events []store.PendingEven
 	}
 	for start := 0; start < len(due); start += MaxBatch {
 		chunk := due[start:min(start+MaxBatch, len(due))]
-		snapshots := make([]quota.Snapshot, 0, len(chunk))
+		deliveries := make([]Delivery, 0, len(chunk))
 		for _, i := range chunk {
-			snapshots = append(snapshots, events[i].Event.Snapshot)
+			deliveries = append(deliveries, Delivery{EventType: events[i].Event.EventType, Snapshot: events[i].Event.Snapshot})
 		}
-		callCtx, cancel := context.WithTimeout(ctx, RequestTimeout)
-		err := s.PublishBatch(callCtx, snapshots)
+		callCtx, cancel := context.WithTimeout(ctx, BatchTimeout)
+		err := s.PublishBatch(callCtx, deliveries)
 		cancel()
 		if err == nil {
 			if ackErr := f.acknowledge(s.ID(), events, chunk); ackErr != nil {
@@ -181,7 +189,8 @@ func (f Flusher) recordFlush(ctx context.Context, now time.Time, runErr error) {
 	}
 	record := &store.FlushRecord{At: now, OK: runErr == nil}
 	if runErr != nil {
-		record.Error = runErr.Error()
+		// errors.Join separates errors with newlines; status prints one line.
+		record.Error = strings.ReplaceAll(runErr.Error(), "\n", "; ")
 	}
 	state.LastFlush = record
 	if err := store.SaveState(f.Home, state); err != nil {

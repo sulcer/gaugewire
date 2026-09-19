@@ -13,11 +13,12 @@ revisit, reference. Remove an entry when it ships or when the trigger is retired
 ## Verify ingestion before acknowledging
 
 - **What:** keep a delivered event spooled as `submitted` until `GET .../ingestions/{id}` reports
-  `success`; dead-letter on `failed`.
+  it with no rejected records; dead-letter when it reports some.
 - **Why deferred:** ack-on-accept is simpler and an async failure of a fixed schema is a bug
   caught on the first run, not an operating condition.
-- **Trigger:** `doctor` ever reports a `failed` ingestion on a healthy configuration.
-- **Reference:** [ADR](adr/2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md).
+- **Trigger:** `doctor` ever reports rejected records on a healthy configuration.
+- **Reference:** [ADR](adr/2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md), amended by
+  [ADR](adr/2026-09-19-doctor-judges-ingestions-by-rejected-records.md).
 
 ## Requeue automation
 

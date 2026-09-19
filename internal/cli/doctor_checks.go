@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 	"uuid"
 
 	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/settings"
+	"github.com/sulcer/gaugewire/internal/sink/databox"
 	"github.com/sulcer/gaugewire/internal/source/claude"
 	"github.com/sulcer/gaugewire/internal/store"
 )
@@ -174,4 +176,125 @@ func checkSpool(home string) check {
 		detail += ", " + strconv.Itoa(unreadable) + " unreadable"
 	}
 	return check{name: "spool", ok: true, detail: detail}
+}
+
+// checkSink is the three rows one enabled sink contributes. Every row calls the
+// API, each call bounded by the client's own request timeout. A key that cannot
+// be resolved fails all three: none of them can be answered without a client.
+func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.IngestionRecord) []check {
+	auth := "sink auth (" + s.ID + ")"
+	datasets := "datasets (" + s.ID + ")"
+	ingestion := "last ingestion (" + s.ID + ")"
+	client, warn, err := sinkClient(in, s)
+	if err != nil {
+		return []check{
+			{name: auth, detail: err.Error()},
+			{name: datasets, detail: err.Error()},
+			{name: ingestion, detail: err.Error()},
+		}
+	}
+	return []check{
+		checkSinkAuth(ctx, client, warn, auth),
+		checkSinkDatasets(ctx, client, s, datasets),
+		checkLastIngestion(ctx, client, s, rec, ingestion),
+	}
+}
+
+// sinkClient resolves the sink's key and builds its client, returning the key
+// file warning alongside. The key stays in the client: it reaches no row, no
+// error and no log line.
+func sinkClient(in doctorInput, s config.Sink) (*databox.Client, string, error) {
+	key, warn, err := loadAPIKey(s.Credentials, in.getenv)
+	if err != nil {
+		return nil, "", err
+	}
+	client, err := newDataboxClient(s, key, in.httpClient)
+	return client, warn, err
+}
+
+// checkSinkAuth validates the key. A key file warning does not fail the row,
+// since the key still works, but it is shown so it gets fixed.
+func checkSinkAuth(ctx context.Context, client *databox.Client, warn, name string) check {
+	if err := client.ValidateKey(ctx); err != nil {
+		return check{name: name, detail: err.Error()}
+	}
+	detail := "key valid"
+	if warn != "" {
+		detail += "; " + warn
+	}
+	return check{name: name, ok: true, detail: detail}
+}
+
+// checkSinkDatasets confirms the configured dataset ids still exist in the
+// data source; a dataset deleted in the product is why delivery starts failing.
+// An unconfigured data source id is reported without a request: there is
+// nothing to list it against.
+func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sink, name string) check {
+	if s.DataSourceID == 0 {
+		return check{name: name, detail: "data source not configured"}
+	}
+	list, err := client.Datasets(ctx, s.DataSourceID)
+	if err != nil {
+		return check{name: name, detail: err.Error()}
+	}
+	present := make(map[string]bool, len(list))
+	for _, d := range list {
+		present[d.ID] = true
+	}
+	var found, missing []string
+	for _, want := range []struct{ label, id string }{{"history", s.HistoryDatasetID}, {"current", s.CurrentDatasetID}} {
+		if want.id == "" {
+			missing = append(missing, want.label+" not configured")
+			continue
+		}
+		part := want.label + " " + want.id
+		if present[want.id] {
+			found = append(found, part)
+			continue
+		}
+		missing = append(missing, part)
+	}
+	if len(missing) > 0 {
+		return check{name: name, detail: "missing: " + strings.Join(missing, ", ")}
+	}
+	return check{name: name, ok: true, detail: strings.Join(found, ", ")}
+}
+
+// checkLastIngestion re-reads what the sink last had accepted. An Ingestion's
+// Status mirrors the response envelope, which is "success" for anything the API
+// hands back, so whether the rows landed is decided by the rejected count. A
+// recorded ingestion whose dataset id is no longer configured, or whose lookup
+// errors, fails that dataset's part without stopping the other one.
+func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Sink, rec store.IngestionRecord, name string) check {
+	accepted := true
+	var parts []string
+	for _, want := range []struct{ label, dataset, ingestion string }{
+		{"history", s.HistoryDatasetID, rec.History},
+		{"current", s.CurrentDatasetID, rec.Current},
+	} {
+		if want.ingestion == "" {
+			continue
+		}
+		if want.dataset == "" {
+			accepted = false
+			parts = append(parts, want.label+" not configured")
+			continue
+		}
+		ing, err := client.Ingestion(ctx, want.dataset, want.ingestion)
+		if err != nil {
+			accepted = false
+			parts = append(parts, want.label+" error: "+err.Error())
+			continue
+		}
+		part := want.label + " " + ing.Status
+		if ing.Metrics.Rejected > 0 {
+			accepted = false
+			part += fmt.Sprintf(" (%d rejected)", ing.Metrics.Rejected)
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return check{name: name, ok: true, detail: "none yet"}
+	}
+	return check{name: name, ok: accepted, detail: strings.Join(parts, ", ")}
 }
