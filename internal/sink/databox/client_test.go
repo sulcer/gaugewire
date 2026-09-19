@@ -54,10 +54,17 @@ func TestAccountsDecodesTheList(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
 	f.on("GET", "/v1/accounts", 200, `{"requestId":"r","status":"success","accounts":[{"id":123456,"name":"Acme","accountType":"organization"}]}`)
-	got, err := client(t, f).Accounts(t.Context())
-	want := []Account{{ID: 123456, Name: "Acme", AccountType: "organization"}}
-	if err != nil || !cmp.Equal(want, got) {
-		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	accounts, err := client(t, f).Accounts(t.Context())
+	got := struct {
+		err      bool
+		accounts []Account
+	}{err != nil, accounts}
+	want := struct {
+		err      bool
+		accounts []Account
+	}{false, []Account{{ID: 123456, Name: "Acme", AccountType: "organization"}}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -139,8 +146,15 @@ func TestIngestRefusesMoreThanMaxRecords(t *testing.T) {
 	records := make([]map[string]any, MaxRecords+1)
 	_, err := client(t, f).Ingest(t.Context(), "ds-hist", records)
 	class, code := sink.Classify(err)
-	if err == nil || class != sink.Permanent || code != "too_many_records" || len(f.seen()) != 0 {
-		t.Fatalf("err=%v class=%v code=%q calls=%d; want a permanent too_many_records error and no request", err, class, code, len(f.seen()))
+	type outcome struct {
+		failed bool
+		class  sink.Class
+		code   string
+		calls  int
+	}
+	got := outcome{err != nil, class, code, len(f.seen())}
+	if want := (outcome{true, sink.Permanent, "too_many_records", 0}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
 	}
 }
 
@@ -191,8 +205,14 @@ func TestTransportFailureIsRetryable(t *testing.T) {
 	}
 	err = c.ValidateKey(t.Context())
 	class, code := sink.Classify(err)
-	if err == nil || class != sink.Retryable || code != "transport" {
-		t.Fatalf("err=%v class=%v code=%q, want retryable transport", err, class, code)
+	type outcome struct {
+		failed bool
+		class  sink.Class
+		code   string
+	}
+	got := outcome{err != nil, class, code}
+	if want := (outcome{true, sink.Retryable, "transport"}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
 	}
 }
 

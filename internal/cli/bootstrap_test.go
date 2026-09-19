@@ -236,8 +236,20 @@ func TestBootstrapUsesTheGivenAccountID(t *testing.T) {
 	home := freshHome(t)
 	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
-	if err != nil || cfg.Sinks[0].AccountID != 7 {
-		t.Fatalf("err=%v accountId=%d, want nil and 7", err, cfg.Sinks[0].AccountID)
+	got := struct {
+		err   bool
+		sinks []config.Sink
+	}{err != nil, cfg.Sinks}
+	want := struct {
+		err   bool
+		sinks []config.Sink
+	}{false, []config.Sink{{
+		ID: "databox-main", Type: "databox", Enabled: true, BaseURL: f.server.URL,
+		AccountID: 7, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+		Credentials: config.Credentials{APIKeyEnv: config.DefaultAPIKeyEnv},
+	}}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -248,8 +260,18 @@ func TestBootstrapStopsOnAnInvalidKeyWithoutWriting(t *testing.T) {
 	home := freshHome(t)
 	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
-	if err == nil || len(cfg.Sinks) != 0 || len(f.seen()) != 1 {
-		t.Fatalf("err=%v sinks=%d calls=%v, want an error, no sink saved, one call", err, len(cfg.Sinks), f.seen())
+	got := struct {
+		err   bool
+		sinks int
+		calls []string
+	}{err != nil, len(cfg.Sinks), f.seen()}
+	want := struct {
+		err   bool
+		sinks int
+		calls []string
+	}{true, 0, []string{"GET /v1/auth/validate-key"}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -270,8 +292,17 @@ func TestBootstrapRecordsTheKeyFilePath(t *testing.T) {
 	opts.getenv = func(string) string { return "" }
 	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
-	if err != nil || cfg.Sinks[0].Credentials.APIKeyFile != keyFile || cfg.Sinks[0].Credentials.APIKeyEnv != "" {
-		t.Fatalf("err=%v creds=%+v, want the key file recorded", err, cfg.Sinks[0].Credentials)
+	type outcome struct {
+		err   bool
+		creds config.Credentials
+	}
+	var got outcome
+	got.err = err != nil
+	if len(cfg.Sinks) == 1 {
+		got.creds = cfg.Sinks[0].Credentials
+	}
+	if want := (outcome{false, config.Credentials{APIKeyFile: keyFile}}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
