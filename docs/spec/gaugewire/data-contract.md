@@ -1,14 +1,14 @@
 # Data contract
 
-Status: Draft · Partial · 2026-09-17 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
+Status: Draft · Partial · 2026-09-18 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
 
 ## At a glance
 
 Sinks never see Anthropic's raw schema. They receive `QuotaSnapshot v1`, a versioned object
 owned by this project. Everything on disk is JSON written atomically. Only the four quota fields
 and the Claude Code version are ever read from the status-line input; nothing else from it is
-persisted. The snapshot, state and spooled-event shapes are built; `config.json` and the identity
-wiring are not.
+persisted. The snapshot, state, spooled-event and config shapes are built; the identity wiring
+runs through `config.json`.
 
 ## Source input
 
@@ -97,6 +97,9 @@ older or missing versions skip observation and `doctor` reports it.
 - Durations are Go duration strings. Unknown sink `type` fails validation.
 - Credentials: `apiKeyFile` if set, else the environment variable named by `apiKeyEnv`
   (default `DATABOX_API_KEY`). The key never appears in config, state, events or logs.
+- Loading a file that decodes but fails validation returns the decoded value together with an
+  `ErrInvalid` error, so the hot path can keep the renderer running; every other command treats
+  it as fatal.
 
 ## state.json
 
@@ -115,8 +118,8 @@ older or missing versions skip observation and `doctor` reports it.
 ```
 
 The hot path writes `windows`, `lastObservedAt`, `claudeCodeVersion` and `lastPublished` under
-`state.lock`. The flusher writes `lastFlush` and `lastIngestion` under `state.lock`, held only
-around the read-modify-write, never around network calls.
+`state.lock`. The flusher writes `lastFlush` under `state.lock`, held only around the
+read-modify-write, never around network calls; `lastIngestion` arrives with the Databox sink.
 
 ## Spooled event
 

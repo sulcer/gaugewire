@@ -178,3 +178,36 @@ func TestRequeueMovesDeadLettersBackWithFreshDelivery(t *testing.T) {
 		t.Fatalf("pending mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestQuarantineMovesUndecodablePendingFilesAside(t *testing.T) {
+	t.Parallel()
+	home := spoolHome(t)
+	captured := time.Date(2026, 9, 17, 15, 0, 0, 0, time.UTC)
+	if _, err := WritePending(home, event("evt-good", captured)); err != nil {
+		t.Fatalf("write good: %v", err)
+	}
+	bad := filepath.Join(home, PendingDir, "1789657100000-evt-bad.json")
+	if err := os.WriteFile(bad, []byte(`{"eventType": "cha`), 0o600); err != nil {
+		t.Fatalf("write bad: %v", err)
+	}
+	moved, err := Quarantine(home)
+	if err != nil {
+		t.Fatalf("Quarantine: %v", err)
+	}
+	pending, listErr := ListPending(home)
+	_, statErr := os.Stat(filepath.Join(home, DeadLetterDir, "1789657100000-evt-bad.json.unreadable"))
+	type outcome struct {
+		moved       []string
+		pendingIDs  []string
+		listOK      bool
+		quarantined bool
+	}
+	got := outcome{moved: moved, listOK: listErr == nil, quarantined: statErr == nil}
+	for _, pe := range pending {
+		got.pendingIDs = append(got.pendingIDs, pe.Event.Snapshot.EventID)
+	}
+	want := outcome{moved: []string{"1789657100000-evt-bad.json"}, pendingIDs: []string{"evt-good"}, listOK: true, quarantined: true}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(outcome{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}

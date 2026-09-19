@@ -2,9 +2,11 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 // BuildInfo describes the running binary. The linker sets these values for a
@@ -15,17 +17,30 @@ type BuildInfo struct {
 	Date    string
 }
 
-// ErrUsage is returned when the arguments do not name a valid command.
-var ErrUsage = errors.New("usage: gaugewire <command>\n\ncommands:\n  version   print version, commit and build date")
+// IO carries the process streams so commands never touch os.Stdin or os.Stdout directly.
+type IO struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+}
 
-// Run executes the command named by args and writes its output to stdout.
-func Run(args []string, info BuildInfo, stdout io.Writer) error {
+// ErrUsage is returned when the arguments do not name a valid command.
+var ErrUsage = errors.New("usage: gaugewire <command>\n\ncommands:\n  statusline          Claude Code status-line adapter (reads stdin)\n  flush [--requeue]   deliver pending events once\n  status              show quota state and spool counts\n  version             print version, commit and build date")
+
+// Run executes the command named by args.
+func Run(ctx context.Context, args []string, info BuildInfo, streams IO) error {
 	if len(args) == 0 {
 		return ErrUsage
 	}
 	switch args[0] {
+	case "statusline":
+		return runStatusline(ctx, info, streams, spawnFlusher)
+	case "flush":
+		return runFlush(ctx, args[1:], info, streams)
+	case "status":
+		return runStatus(streams.Stdout, time.Now(), time.Local)
 	case "version":
-		return runVersion(info, stdout)
+		return runVersion(info, streams.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q: %w", args[0], ErrUsage)
 	}

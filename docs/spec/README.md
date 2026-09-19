@@ -9,7 +9,7 @@ legal: a settled design nobody has built yet. See the
 
 | Spec | Status | Built | Scope |
 |---|---|---|---|
-| [`gaugewire`](gaugewire/README.md) | Draft | Partial | The product: capture Claude Code quota from the status line, normalize, persist, publish to sinks. Databox is the first sink. |
+| [`gaugewire`](gaugewire/README.md) | Draft | Partial | The product: capture Claude Code quota from the status line, normalize, persist, publish to sinks. Databox is the first sink. Hot path and flusher built; install, doctor and the Databox sink are next. |
 | [`repo-scaffold`](repo-scaffold/README.md) | Stable | Built | How the repository is built, gated, released and made legible to humans and agents. |
 
 Once a spec is `Stable`, every behaviour-changing edit also gets an ADR and the changed section

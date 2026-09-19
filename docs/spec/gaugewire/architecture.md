@@ -1,13 +1,13 @@
 # Architecture
 
-Status: Draft · Planned · 2026-09-17 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
+Status: Draft · Partial · 2026-09-18 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
 
 ## At a glance
 
 Gaugewire is one static binary with five subcommand groups. The domain (`quota`) knows nothing
 about files, processes or networks. Adapters surround it: a source adapter for Claude Code's
 status line, a store for state and spool, a renderer bridge, and sinks. The CLI wires them. A
-future source or sink touches only its own package.
+future source or sink touches only its own package. This layout is built except `sink/databox`.
 
 ## Diagram
 
@@ -20,7 +20,7 @@ flowchart TB
         SRC["source/claude<br/>stdin JSON to Observation"]
         REN[renderer<br/>run original command]
         STO[store<br/>home dir, atomic writes,<br/>locks, state, spool]
-        SNK[sink<br/>Sink, Router]
+        SNK[sink<br/>Sink, Flusher]
         DBX[sink/databox<br/>v1 client, records]
     end
     Q[quota<br/>Snapshot, Window,<br/>Reduce, Decide]
@@ -44,7 +44,7 @@ internal/quota/              Snapshot, Window, WindowStatus, Reduce, Decide. Pur
 internal/source/claude/      status-line JSON → Observation, version gate
 internal/store/              home dir, atomic write, flock locks, state.json, pending/, dead-letter/
 internal/renderer/           run the saved command with exact stdin, forward stdout
-internal/sink/               Sink interface, Router, per-sink delivery bookkeeping
+internal/sink/               Sink interface, Flusher, per-sink delivery bookkeeping
 internal/sink/databox/       v1 client, dataset records, error classification, bootstrap calls
 internal/config/             config.json load, validate, save
 internal/cli/                one file per subcommand; status and doctor rendering

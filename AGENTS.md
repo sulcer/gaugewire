@@ -51,7 +51,7 @@ internal/quota/          domain: snapshot, windows, reducer, dedupe (pure, no I/
 internal/source/claude/  status-line JSON to observation
 internal/store/          home directory, atomic writes, locks, state, spool
 internal/renderer/       the user's previous status-line command
-internal/sink/           Sink and Router; internal/sink/databox/ is the first sink
+internal/sink/           Sink and Flusher; internal/sink/databox/ is the first sink
 internal/config/         config.json
 fixtures/statusline/     real and synthetic stdin payloads
 tools/                   pinned dev tools

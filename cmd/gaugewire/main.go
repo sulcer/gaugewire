@@ -2,9 +2,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/sulcer/gaugewire/internal/cli"
 )
@@ -17,14 +20,20 @@ var (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	info := cli.BuildInfo{Version: version, Commit: commit, Date: date}
-	err := cli.Run(os.Args[1:], info, os.Stdout)
+	err := cli.Run(ctx, os.Args[1:], info, cli.IO{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
 	if err == nil {
-		return
+		return 0
 	}
 	fmt.Fprintln(os.Stderr, err)
 	if errors.Is(err, cli.ErrUsage) {
-		os.Exit(2)
+		return 2
 	}
-	os.Exit(1)
+	return 1
 }

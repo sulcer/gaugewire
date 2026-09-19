@@ -1,6 +1,6 @@
 # Hot path
 
-Status: Draft · Planned · 2026-09-17 · What `gaugewire statusline` does between stdin and exit, and the rules Claude Code imposes on it.
+Status: Draft · Built · 2026-09-18 · What `gaugewire statusline` does between stdin and exit, and the rules Claude Code imposes on it.
 
 ## At a glance
 
@@ -19,6 +19,7 @@ flowchart TD
     C --> D{"flock state.lock, wait at most 1 s"}
     D -->|timeout| Z
     D --> E["load state.json<br/>missing or corrupt: fresh"]
+    E -->|unreadable| Z
     E --> F[Reduce + Decide]
     F -->|publish| G[write pending event, atomic]
     F --> H[write state.json, atomic]
@@ -47,16 +48,26 @@ flowchart TD
 1. Gaugewire writes zero bytes of its own to stdout, ever. Renderer stderr passes through.
 2. No network on this path.
 3. The renderer runs through `/bin/sh -c` on Unix and, on Windows, through `bash -c` when
-   `bash` is on `PATH`, else `powershell -NoProfile -Command`. It runs in Gaugewire's process
-   group so Claude Code's cancellation reaches it.
-4. The flusher is spawned with stdin from the null device and stdout and stderr redirected to
-   the log file, in its own session (`Setsid` on Unix, `CREATE_NEW_PROCESS_GROUP |
+   `bash` is on `PATH`, else `powershell -NoProfile -Command`. On Unix the shell gets its own
+   process group and Gaugewire kills that whole group when it receives SIGINT or SIGTERM, so a
+   command the shell forked rather than exec'd (Linux `/bin/sh` does this) dies with it. On
+   Windows only the shell process is terminated. In both cases Gaugewire stops waiting for the
+   output pipes half a second after the shell is gone. Whether Claude Code signals the process
+   or the group is not documented; Gaugewire handles the signal itself either way.
+4. The flusher is spawned with stdin and stdout from and to the null device and stderr
+   redirected to the log file, in its own session (`Setsid` on Unix, `CREATE_NEW_PROCESS_GROUP |
    DETACHED_PROCESS` on Windows). If spawning fails the spool stays intact and a later
    invocation retries.
-5. A flusher is spawned when an event was just spooled, or when any pending event is due.
-6. Lock wait is bounded at one second; on timeout the observation is dropped and logged.
+5. A flusher is spawned when an event was just spooled, or when any pending event is due,
+   regardless of how many sinks are enabled.
+6. Lock wait is bounded at one second; on timeout the observation is dropped and logged. An
+   observation against a `state.json` that cannot be read is dropped the same way and the file is
+   never overwritten; one that decodes badly starts from a fresh state.
 7. No log line on the no-op path. Logs only on publish, skip or error.
-8. Budget: p95 under 50 ms of Gaugewire's own work, excluding the renderer.
+8. Budget: p95 under 50 ms of Gaugewire's own work, excluding the renderer; not yet measured.
+9. When `config.json` decodes but fails validation, the renderer still runs with the saved
+   command and nothing is observed (fail open). When `config.json` is missing, nothing runs and
+   nothing is written.
 
 ## No renderer configured
 

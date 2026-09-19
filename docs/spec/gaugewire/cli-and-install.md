@@ -1,6 +1,6 @@
 # CLI and install
 
-Status: Draft · Planned · 2026-09-17 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
+Status: Draft · Partial · 2026-09-18 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
 
 ## At a glance
 
@@ -22,6 +22,13 @@ offline; `doctor` checks everything including the sink.
 | `gaugewire doctor` | Full health check, exit 1 on any failing check. |
 | `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--test-ingest]` | See [databox-sink](databox-sink.md). |
 | `gaugewire version` | Version, commit, date from build info. |
+
+Built: `statusline`, `flush`, `status`, `version`. Not built: `install`, `uninstall`, `doctor`,
+`databox bootstrap`.
+
+`flush -h` prints usage and exits 0. A retryable delivery failure makes `flush` exit 1, which is
+harmless for the detached run: a later status-line invocation relaunches it when work is still
+due.
 
 ## Install
 
@@ -67,8 +74,11 @@ Last publish:      2m ago
 Pending events:    0
 Dead letters:      0
 
-Databox:           last flush ok 2m ago
+databox-main:      last flush ok 2m ago
 ```
+
+One line per enabled sink, keyed by its id. When `state.json` cannot be decoded, the first output
+line is `state.json is not valid; showing a fresh state` and the view shows a fresh state.
 
 Reads `state.json` and counts spool files. No network.
 
@@ -98,7 +108,8 @@ any ✗.
 `log/slog` JSON lines to `logs/gaugewire.log`, rotated to `.1` at 1 MiB. Fields are limited to
 timestamps, event ids, parse success or failure with the failing field path, sink id, delivery
 status, attempt count, error code and observer version. Never logged: raw status-line JSON,
-session ids, paths, repositories, transcripts, prompts, credentials.
+session ids, paths, repositories, transcripts, prompts, credentials. Error reasons may name files
+inside the Gaugewire home directory; nothing outside it is ever logged.
 
 ## Home directory
 
