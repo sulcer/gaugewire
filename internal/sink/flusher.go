@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sulcer/gaugewire/internal/store"
@@ -188,7 +189,8 @@ func (f Flusher) recordFlush(ctx context.Context, now time.Time, runErr error) {
 	}
 	record := &store.FlushRecord{At: now, OK: runErr == nil}
 	if runErr != nil {
-		record.Error = runErr.Error()
+		// errors.Join separates errors with newlines; status prints one line.
+		record.Error = strings.ReplaceAll(runErr.Error(), "\n", "; ")
 	}
 	state.LastFlush = record
 	if err := store.SaveState(f.Home, state); err != nil {

@@ -59,10 +59,11 @@ func TestLoadIngestionReportsACorruptStateFile(t *testing.T) {
 	}
 }
 
-// TestLoadIngestionReportsAHeldLockAsRetryable holds state.lock and passes a
-// context that is already cancelled, so the wait ends at once through the
-// caller's context rather than after the lock budget.
-func TestLoadIngestionReportsAHeldLockAsRetryable(t *testing.T) {
+// TestLoadIngestionReportsALockErrorAsRetryable passes a context that is
+// already cancelled, so store.Lock fails at once through the caller's context;
+// it proves that a lock error comes back as retryable state_lock. The lock is
+// held as well to mirror the real case, but the cancelled context decides.
+func TestLoadIngestionReportsALockErrorAsRetryable(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	if err := store.EnsureLayout(home); err != nil {

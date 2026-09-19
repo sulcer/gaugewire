@@ -62,7 +62,7 @@ docs/                    adr, spec, plans, how-tos, research
 ```
 
 Dependency direction: `source → quota`, `quota → nothing`, `settings → nothing`,
-`store, sink → quota`, `sink/databox → sink, quota`, `cli → everything`. Nothing imports `cli`.
+`store → quota`, `sink → store, quota`, `sink/databox → sink, quota`, `cli → everything`. Nothing imports `cli`.
 
 ## Commands
 

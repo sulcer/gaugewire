@@ -43,7 +43,9 @@ func buildBinary(t *testing.T, ldflags string) string {
 func TestBinaryPrintsInjectedVersion(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "-X main.version=v9.9.9 -X main.commit=cafe -X main.date=2026-09-17")
-	out, err := exec.CommandContext(t.Context(), binary, "version").CombinedOutput()
+	cmd := exec.CommandContext(t.Context(), binary, "version")
+	cmd.Env = childEnv()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("version failed: %v\n%s", err, out)
 	}
@@ -56,7 +58,9 @@ func TestBinaryPrintsInjectedVersion(t *testing.T) {
 func TestBinaryExitsTwoOnUsageError(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "")
-	err := exec.CommandContext(t.Context(), binary).Run()
+	cmd := exec.CommandContext(t.Context(), binary)
+	cmd.Env = childEnv()
+	err := cmd.Run()
 	exitErr, ok := errors.AsType[*exec.ExitError](err)
 	if !ok {
 		t.Fatalf("got error %v, want an *exec.ExitError", err)

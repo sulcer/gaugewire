@@ -108,8 +108,8 @@ Before posting anything, the sink loads its ingestion record from `state.json` u
 not be read — fails the chunk as retryable before any request; nothing is lost, because a retry
 resends History, which is an upsert. A corrupt `state.json` is logged and read as no record, so
 Current is sent. Once History has accepted the chunk — and Current too, when the guard sent it a
-request — the sink saves its ingestion record — the two ingestion ids and the `capturedAt` Current now holds —
-in `state.json` under `state.lock`. A failure to save is logged and never retried, because the
+request — the sink saves its ingestion record (the two ingestion ids and the `capturedAt` Current
+now holds) in `state.json` under `state.lock`. A failure to save is logged and never retried, because the
 API already accepted the data; the chunk is not failed for it. A lost save (the `state.lock`
 wait timed out) leaves the previous record in place, so the `currentCapturedAt` guard is
 bypassed on every following chunk until a newer event's save succeeds and corrects Current.

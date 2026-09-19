@@ -49,7 +49,7 @@ func (s *Sink) PublishBatch(ctx context.Context, deliveries []sink.Delivery) err
 	}
 	previous, found, err := s.ingestions.LoadIngestion(ctx, s.id)
 	if errors.Is(err, sink.ErrIngestionRecordCorrupt) {
-		s.logger.Warn("ingestion record unreadable", "sink", s.id, "reason", err.Error())
+		s.logger.Warn("state reset", "sink", s.id, "reason", err.Error())
 		previous, found = sink.Ingestion{}, false
 	} else if err != nil {
 		return err
