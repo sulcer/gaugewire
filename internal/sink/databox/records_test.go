@@ -59,7 +59,7 @@ func encoded(t *testing.T, record map[string]any) string {
 
 func TestHistoryRecordHasEveryColumn(t *testing.T) {
 	t.Parallel()
-	got := encoded(t, HistoryRecord(observedSnapshot("evt-1"), "change", publishedAt))
+	got := encoded(t, HistoryRecord(observedSnapshot("evt-1"), quota.EventChange, publishedAt))
 	if want := golden(t, "history_record.golden"); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
@@ -67,7 +67,7 @@ func TestHistoryRecordHasEveryColumn(t *testing.T) {
 
 func TestHistoryRecordWritesNullForUnknowns(t *testing.T) {
 	t.Parallel()
-	got := encoded(t, HistoryRecord(unknownSnapshot("evt-2"), "heartbeat", publishedAt))
+	got := encoded(t, HistoryRecord(unknownSnapshot("evt-2"), quota.EventHeartbeat, publishedAt))
 	if want := golden(t, "history_record_unknown.golden"); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}

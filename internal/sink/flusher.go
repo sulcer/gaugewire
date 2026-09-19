@@ -8,15 +8,17 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sulcer/gaugewire/internal/quota"
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
 // FlushLockFile guarantees one flusher per machine.
 const FlushLockFile = "flush.lock"
 
-// RequestTimeout bounds one PublishBatch call.
+// RequestTimeout bounds one HTTP request a sink makes.
 const RequestTimeout = 15 * time.Second
+
+// BatchTimeout bounds one PublishBatch call, which may make several requests.
+const BatchTimeout = 3 * RequestTimeout
 
 // RunTimeout bounds one flusher run.
 const RunTimeout = 2 * time.Minute
@@ -101,12 +103,12 @@ func (f Flusher) deliver(ctx context.Context, s Sink, events []store.PendingEven
 	}
 	for start := 0; start < len(due); start += MaxBatch {
 		chunk := due[start:min(start+MaxBatch, len(due))]
-		snapshots := make([]quota.Snapshot, 0, len(chunk))
+		deliveries := make([]Delivery, 0, len(chunk))
 		for _, i := range chunk {
-			snapshots = append(snapshots, events[i].Event.Snapshot)
+			deliveries = append(deliveries, Delivery{EventType: events[i].Event.EventType, Snapshot: events[i].Event.Snapshot})
 		}
-		callCtx, cancel := context.WithTimeout(ctx, RequestTimeout)
-		err := s.PublishBatch(callCtx, snapshots)
+		callCtx, cancel := context.WithTimeout(ctx, BatchTimeout)
+		err := s.PublishBatch(callCtx, deliveries)
 		cancel()
 		if err == nil {
 			if ackErr := f.acknowledge(s.ID(), events, chunk); ackErr != nil {

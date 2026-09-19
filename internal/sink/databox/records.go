@@ -20,10 +20,10 @@ const timestampLayout = "2006-01-02T15:04:05.000Z07:00"
 // HistoryRecord is one row of the History dataset: the whole snapshot plus
 // the event type and the send time. Every column is present; unknown values
 // are null.
-func HistoryRecord(s quota.Snapshot, eventType string, publishedAt time.Time) map[string]any {
+func HistoryRecord(s quota.Snapshot, eventType quota.EventType, publishedAt time.Time) map[string]any {
 	r := map[string]any{
 		"event_id":     s.EventID,
-		"event_type":   eventType,
+		"event_type":   string(eventType),
 		"published_at": timestamp(publishedAt),
 		"source_type":  s.Source.Type,
 	}

@@ -26,10 +26,10 @@ type fakeSink struct {
 
 func (f *fakeSink) ID() string { return f.id }
 
-func (f *fakeSink) PublishBatch(_ context.Context, snapshots []quota.Snapshot) error {
-	ids := make([]string, 0, len(snapshots))
-	for _, s := range snapshots {
-		ids = append(ids, s.EventID)
+func (f *fakeSink) PublishBatch(_ context.Context, deliveries []Delivery) error {
+	ids := make([]string, 0, len(deliveries))
+	for _, d := range deliveries {
+		ids = append(ids, d.Snapshot.EventID)
 	}
 	f.batches = append(f.batches, ids)
 	if len(f.script) == 0 {
