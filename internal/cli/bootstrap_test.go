@@ -209,9 +209,17 @@ func TestBootstrapNeedsAccountIDWhenSeveralAccounts(t *testing.T) {
 	f := newFakeDatabox(t)
 	f.on("GET /v1/auth/validate-key", validKey)
 	f.on("GET /v1/accounts", twoAccounts)
-	err := bootstrap(t.Context(), freshHome(t), bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
-	if !errors.Is(err, ErrChooseAccount) {
-		t.Fatalf("got %v, want ErrChooseAccount", err)
+	home := freshHome(t)
+	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
+	cfg, _ := config.Load(home)
+	type outcome struct {
+		choose  bool
+		message string
+		sinks   int
+	}
+	got := outcome{errors.Is(err, ErrChooseAccount), fmt.Sprint(err), len(cfg.Sinks)}
+	if want := (outcome{true, "several accounts are reachable; pass --account-id: 123456 Acme, 7 Other", 0}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 

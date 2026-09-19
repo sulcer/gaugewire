@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 	"uuid"
 
@@ -180,7 +182,11 @@ func chooseAccount(ctx context.Context, client *databox.Client, wanted int64) (d
 	case len(accounts) == 1:
 		return accounts[0], nil
 	default:
-		return databox.Account{}, ErrChooseAccount
+		names := make([]string, 0, len(accounts))
+		for _, a := range accounts {
+			names = append(names, strconv.FormatInt(a.ID, 10)+" "+a.Name)
+		}
+		return databox.Account{}, fmt.Errorf("%w: %s", ErrChooseAccount, strings.Join(names, ", "))
 	}
 }
 

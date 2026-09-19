@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -56,6 +57,18 @@ func TestLoadAPIKeyReportsNoKey(t *testing.T) {
 	_, _, err := loadAPIKey(config.Credentials{APIKeyEnv: "GW_UNSET"}, func(string) string { return "" })
 	if !errors.Is(err, ErrNoAPIKey) {
 		t.Fatalf("got %v, want ErrNoAPIKey", err)
+	}
+}
+
+// TestLoadAPIKeyDoesNotEchoAMissingKeyFilePath passes a key pasted where the
+// path belongs: the error must not print it back.
+func TestLoadAPIKeyDoesNotEchoAMissingKeyFilePath(t *testing.T) {
+	t.Parallel()
+	pasted := filepath.Join(t.TempDir(), "dbx-pasted-key-0123")
+	_, _, err := loadAPIKey(config.Credentials{APIKeyFile: pasted}, func(string) string { return "" })
+	want := "key file not found; credentials.apiKeyFile and --api-key-file take the path of a file that holds the key"
+	if got := fmt.Sprint(err); got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 

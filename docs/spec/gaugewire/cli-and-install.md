@@ -181,7 +181,9 @@ also reads the repository root's `.claude/settings.local.json`. Without `--setti
 checks the file `install` recorded in `config.json` and falls back to the user settings file.
 
 The three sink rows are appended once per enabled Databox sink, after the offline rows, which
-keep their own order. Each row fails independently: a key that cannot be resolved fails all
+keep their own order, and only when `config.json` is valid: doctor never calls a sink out of a
+configuration it has just reported as invalid. A key file readable by others passes the sink
+auth row, which reads `key valid; <warning>`. Each row fails independently: a key that cannot be resolved fails all
 three with the key error, since none of them can be answered without a client; an unconfigured
 data source or dataset id is reported as `not configured` without making a request; a recorded
 ingestion id the API no longer returns reads as a failure until the next flush records a new

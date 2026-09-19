@@ -10,7 +10,7 @@ import (
 )
 
 // ErrNoAPIKey means neither the key file nor the environment holds a key.
-var ErrNoAPIKey = errors.New("no Databox API key: set credentials.apiKeyFile or the environment variable")
+var ErrNoAPIKey = errors.New("no Databox API key: pass --api-key-file to gaugewire databox bootstrap, or set the environment variable named by credentials.apiKeyEnv (default DATABOX_API_KEY)")
 
 // loadAPIKey reads the key from the configured file, else from the named
 // environment variable. The key is returned to the caller and never logged.
@@ -18,6 +18,11 @@ var ErrNoAPIKey = errors.New("no Databox API key: set credentials.apiKeyFile or 
 func loadAPIKey(creds config.Credentials, getenv func(string) string) (key, warn string, err error) {
 	if creds.APIKeyFile != "" {
 		raw, readErr := os.ReadFile(creds.APIKeyFile)
+		// A key pasted where the path belongs lands here, so the path is not
+		// printed back.
+		if errors.Is(readErr, os.ErrNotExist) {
+			return "", "", errors.New("key file not found; credentials.apiKeyFile and --api-key-file take the path of a file that holds the key")
+		}
 		if readErr != nil {
 			return "", "", fmt.Errorf("read key file: %w", readErr)
 		}

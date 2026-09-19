@@ -111,7 +111,8 @@ func runRendererSample(ctx context.Context, command string) error {
 }
 
 // diagnose runs every offline check in display order, then the rows that call
-// a sink. Only an enabled sink is reached, so a machine without one stays offline.
+// a sink. Only an enabled sink of a valid config.json is reached, so a machine
+// without one stays offline and a rejected configuration is never acted on.
 func diagnose(ctx context.Context, in doctorInput) []check {
 	state, _ := store.LoadState(in.home)
 	checks := []check{
@@ -125,6 +126,9 @@ func diagnose(ctx context.Context, in doctorInput) []check {
 		checkQuotaWindows(state, in.now),
 		checkRefreshInterval(in),
 		checkSpool(in.home),
+	}
+	if in.cfgErr != nil {
+		return checks
 	}
 	for _, s := range in.cfg.Sinks {
 		if s.Enabled && s.Type == config.SinkTypeDatabox {

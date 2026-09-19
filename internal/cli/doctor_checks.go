@@ -185,7 +185,7 @@ func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.Ing
 	auth := "sink auth (" + s.ID + ")"
 	datasets := "datasets (" + s.ID + ")"
 	ingestion := "last ingestion (" + s.ID + ")"
-	client, err := sinkClient(in, s)
+	client, warn, err := sinkClient(in, s)
 	if err != nil {
 		return []check{
 			{name: auth, detail: err.Error()},
@@ -194,27 +194,35 @@ func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.Ing
 		}
 	}
 	return []check{
-		checkSinkAuth(ctx, client, auth),
+		checkSinkAuth(ctx, client, warn, auth),
 		checkSinkDatasets(ctx, client, s, datasets),
 		checkLastIngestion(ctx, client, s, rec, ingestion),
 	}
 }
 
-// sinkClient resolves the sink's key and builds its client. The key stays in
-// the client: it reaches no row, no error and no log line.
-func sinkClient(in doctorInput, s config.Sink) (*databox.Client, error) {
-	key, _, err := loadAPIKey(s.Credentials, in.getenv)
+// sinkClient resolves the sink's key and builds its client, returning the key
+// file warning alongside. The key stays in the client: it reaches no row, no
+// error and no log line.
+func sinkClient(in doctorInput, s config.Sink) (*databox.Client, string, error) {
+	key, warn, err := loadAPIKey(s.Credentials, in.getenv)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return newDataboxClient(s, key, in.httpClient)
+	client, err := newDataboxClient(s, key, in.httpClient)
+	return client, warn, err
 }
 
-func checkSinkAuth(ctx context.Context, client *databox.Client, name string) check {
+// checkSinkAuth validates the key. A key file warning does not fail the row,
+// since the key still works, but it is shown so it gets fixed.
+func checkSinkAuth(ctx context.Context, client *databox.Client, warn, name string) check {
 	if err := client.ValidateKey(ctx); err != nil {
 		return check{name: name, detail: err.Error()}
 	}
-	return check{name: name, ok: true, detail: "key valid"}
+	detail := "key valid"
+	if warn != "" {
+		detail += "; " + warn
+	}
+	return check{name: name, ok: true, detail: detail}
 }
 
 // checkSinkDatasets confirms the configured dataset ids still exist in the

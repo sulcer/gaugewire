@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -321,11 +322,79 @@ func TestDoctorReportsAMissingKey(t *testing.T) {
 		out  string
 		seen int
 	}{renderDoctor(diagnose(t.Context(), in)), len(f.seen())}
-	const msg = "no Databox API key: set credentials.apiKeyFile or the environment variable"
+	const msg = "no Databox API key: pass --api-key-file to gaugewire databox bootstrap, or set the environment variable named by credentials.apiKeyEnv (default DATABOX_API_KEY)"
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
 	want = strings.Replace(want, "✓ sink auth (databox-main): key valid", "✗ sink auth (databox-main): "+msg, 1)
 	want = strings.Replace(want, "✓ datasets (databox-main): history ds-hist, current ds-cur", "✗ datasets (databox-main): "+msg, 1)
 	want = strings.Replace(want, "✓ last ingestion (databox-main): history success, current success", "✗ last ingestion (databox-main): "+msg, 1)
+	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
+	if diff := cmp.Diff(struct {
+		out  string
+		seen int
+	}{want, 0}, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDoctorReportsAKeyFileWarningOnAValidKey(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v1/auth/validate-key", validKey)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	keyFile := filepath.Join(t.TempDir(), "databox.key")
+	if err := os.WriteFile(keyFile, []byte("doctor-key"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	// WriteFile's mode is masked by the umask; chmod is not.
+	if err := os.Chmod(keyFile, 0o644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks[0].Credentials = config.Credentials{APIKeyFile: keyFile}
+	if err := config.Save(home, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
+	want := strings.Replace(doctorGolden(t, "doctor_sink.golden", home, workDir),
+		"✓ sink auth (databox-main): key valid",
+		"✓ sink auth (databox-main): key valid; key file "+keyFile+" is readable by others; use mode 0600", 1)
+	if got != want {
+		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid writes a config.json
+// that fails validation past config.Save, which would refuse it. Its sink is
+// still decoded, but doctor must not act on a configuration it rejected.
+func TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v1/auth/validate-key", validKey)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Publishing.MinDeltaPercentage = 0
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, config.File), raw, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	got := struct {
+		out  string
+		seen int
+	}{renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir))), len(f.seen())}
+	want := doctorGolden(t, "doctor_healthy.golden", home, workDir)
+	want = strings.Replace(want, "✓ configuration: valid", "✗ configuration: config.json is invalid: publishing.minDeltaPercentage must be positive", 1)
 	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
 	if diff := cmp.Diff(struct {
 		out  string

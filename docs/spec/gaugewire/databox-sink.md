@@ -121,8 +121,10 @@ nice-to-have ledger. Decision:
 
 `apiKeyFile` (`0600`, recommended for fleet machines whose Claude sessions start without a
 shell profile) or the environment variable named by `apiKeyEnv`. A key file readable by others
-is still used, with a warning, rather than refused. The key is never logged, never stored in
-config, state or events. Redirects are refused, so the `x-api-key` header is never replayed to
+is still used, with a warning, rather than refused; `doctor`'s sink auth row shows the warning
+next to `key valid`. A key file that does not exist is reported without its path, since a key
+pasted where the path belongs would otherwise be printed back. The key is never logged, never
+stored in config, state or events. Redirects are refused, so the `x-api-key` header is never replayed to
 another host.
 
 ## Bootstrap
@@ -159,8 +161,9 @@ match is reused and only a missing one is created; repeated runs create nothing 
 flag exists so a test can point bootstrap at `httptest`, not to repoint a fleet machine at a
 different real host. A data source is reused by title whether or not it reports
 `ingestionSupported`; with two data sources sharing a title, the first one the API lists wins.
-When several accounts are reachable and `--account-id` is not given, the error names no
-accounts — the operator is expected to already know the id.
+When several accounts are reachable and `--account-id` is not given, the error lists them by id
+and name (`several accounts are reachable; pass --account-id: 123456 Acme, 7 Other`) and nothing
+is saved.
 
 `--test-ingest` sends one heartbeat snapshot after bootstrapping, but only once `state.json`
 holds an observed quota window: before Claude Code has shown its status line the heartbeat would

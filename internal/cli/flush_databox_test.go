@@ -155,7 +155,7 @@ func TestFlushFailsWhenASinkHasNoKey(t *testing.T) {
 	got := sinkSetupOutcome(t, home, err, requests.Load())
 	want := sinkSetupFailure{
 		err: true, pending: 1, reported: true,
-		lastFlushOK: false, lastFlushError: "sink databox-main not built: no Databox API key: set credentials.apiKeyFile or the environment variable",
+		lastFlushOK: false, lastFlushError: "sink databox-main not built: no Databox API key: pass --api-key-file to gaugewire databox bootstrap, or set the environment variable named by credentials.apiKeyEnv (default DATABOX_API_KEY)",
 	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
