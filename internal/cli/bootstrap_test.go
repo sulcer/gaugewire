@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/quota"
+	"github.com/sulcer/gaugewire/internal/sink/databox"
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
@@ -401,6 +403,64 @@ func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
 			"GET /v1/auth/validate-key", "GET /v1/accounts",
 			"GET /v1/accounts/123456/data-sources", "GET /v1/data-sources/4754489/datasets",
 		},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun makes the home
+// directory read-only after seeding a record from an earlier run: state.json
+// still loads, but the sink's save fails, so the read-back finds the old
+// record and must not report it as this send's.
+func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory modes are not meaningful on Windows")
+	}
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("POST /v1/datasets/ds-hist/data", `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	f.on("POST /v1/datasets/ds-cur/data", `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	home := observedHome(t)
+	state, err := store.LoadState(home)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	state.LastIngestion = map[string]store.IngestionRecord{
+		"databox-main": {Current: "ing-c-old", History: "ing-h-old", At: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)},
+	}
+	if saveErr := store.SaveState(home, state); saveErr != nil {
+		t.Fatalf("save state: %v", saveErr)
+	}
+	if lockErr := os.WriteFile(filepath.Join(home, store.StateLockFile), nil, 0o600); lockErr != nil {
+		t.Fatalf("lock file: %v", lockErr)
+	}
+	if chmodErr := os.Chmod(home, 0o500); chmodErr != nil {
+		t.Fatalf("chmod: %v", chmodErr)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+	if os.WriteFile(filepath.Join(home, "probe"), nil, 0o600) == nil {
+		t.Skip("directory modes do not stop this user from writing")
+	}
+	client, err := databox.NewClient(f.server.URL, "boot-key", f.server.Client())
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	entry := config.Sink{ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, HistoryDatasetID: "ds-hist", CurrentDatasetID: "ds-cur"}
+	var stdout bytes.Buffer
+	err = sendTestHeartbeat(t.Context(), home, testConfig(), entry, client, bootstrapOpts(f), &stdout)
+	got := struct {
+		err   string
+		out   string
+		calls []string
+	}{fmt.Sprint(err), stdout.String(), f.seen()}
+	want := struct {
+		err   string
+		out   string
+		calls []string
+	}{
+		err:   "test ingest was accepted but the ingestion record could not be read back; check logs/gaugewire.log",
+		calls: []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
