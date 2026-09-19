@@ -4,7 +4,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/sulcer/gaugewire/internal/store"
 )
 
 // buildBinary compiles the command into a temporary directory and returns its path.
@@ -229,6 +234,59 @@ func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	}
 	got := outcome{published: strings.Count(string(log), "event published"), pending: len(pending)}
 	want := outcome{published: 1, pending: 0}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestFlushThroughTheBinaryAgainstAFakeAPI(t *testing.T) {
+	t.Parallel()
+	binary := buildBinary(t, "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/datasets/ds-hist/data":
+			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`))
+		case "/v1/datasets/ds-cur/data":
+			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	sinks := `[{"id":"databox-main","type":"databox","enabled":true,"baseUrl":` + strconv.Quote(srv.URL) + `,"accountId":123456,"dataSourceId":4754489,"currentDatasetId":"ds-cur","historyDatasetId":"ds-hist","credentials":{"apiKeyEnv":"GW_IT_DATABOX_KEY","apiKeyFile":""}}]`
+	home := integrationHome(t, "", sinks)
+	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), binary, "statusline")
+	cmd.Env = append(os.Environ(), "GAUGEWIRE_HOME="+home, "GW_IT_DATABOX_KEY=it-key")
+	cmd.Stdin = bytes.NewReader(payload)
+	if _, err := cmd.Output(); err != nil {
+		t.Fatalf("statusline: %v", err)
+	}
+	waitForFlushRuns(t, home, 1)
+	pending, _ := filepath.Glob(filepath.Join(home, "pending", "*.json"))
+	raw, err := os.ReadFile(filepath.Join(home, "state.json"))
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	var state store.State
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	record := state.LastIngestion["databox-main"]
+	got := struct {
+		pending int
+		history string
+		current string
+	}{len(pending), record.History, record.Current}
+	want := struct {
+		pending int
+		history string
+		current string
+	}{0, "ing-h", "ing-c"}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
