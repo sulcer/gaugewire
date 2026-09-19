@@ -1,0 +1,5 @@
+{
+  "model": "claude-sonnet-5",
+  "statusLine": {"type":"command","command":"/opt/gaugewire statusline"},
+  "cleanupPeriodDays": 20
+}

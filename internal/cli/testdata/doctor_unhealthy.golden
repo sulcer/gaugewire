@@ -1,0 +1,12 @@
+✓ configuration: valid
+✗ claude code version: 2.1.100 (minimum 2.1.251)
+✗ status-line integration: points elsewhere: jq -r .model.display_name
+✗ overrides: <localSettings> overrides statusLine
+✗ renderer: cat: exit 3: renderer: exit status 3
+✓ identity: mac-mini-01 / claude-01
+✓ home directory: <home>
+✓ quota windows: 5h unknown, 7d unknown, last observation 5h ago
+✓ refreshInterval: 5s; each tick runs gaugewire
+✓ spool: 1 pending, 1 dead-lettered, newest: databox-main: permanent (invalid_api_key): 401, 1 unreadable
+
+UNHEALTHY

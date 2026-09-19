@@ -131,6 +131,65 @@ func waitForFlushRuns(t *testing.T, home string, want int) {
 	t.Fatalf("the log holds %d flush runs, want %d", count, want)
 }
 
+// gaugewire runs the built binary against home and returns its stdout.
+func gaugewire(t *testing.T, binary, home string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), binary, args...)
+	cmd.Env = append(os.Environ(), "GAUGEWIRE_HOME="+home)
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func TestInstallStatuslineUninstallRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs cat")
+	}
+	t.Parallel()
+	binary := buildBinary(t, "")
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	original := "{\n  \"model\": \"claude-sonnet-5\",\n  \"statusLine\": {\"type\":\"command\",\"command\":\"cat\"}\n}\n"
+	if err := os.WriteFile(settingsPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := gaugewire(t, binary, home, "install", "--settings", settingsPath, "--node-alias", "it-node"); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	installed, err := os.ReadFile(settingsPath)
+	if err != nil || !strings.Contains(string(installed), binary+" statusline") {
+		t.Fatalf("settings after install: %q err %v", installed, err)
+	}
+	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	out, err := statuslineOnce(t, binary, home, payload)
+	if err != nil || out != string(payload) {
+		t.Fatalf("statusline: %q err %v", out, err)
+	}
+	if _, err := gaugewire(t, binary, home, "doctor", "--settings", settingsPath); err != nil {
+		t.Fatalf("doctor after install should be healthy: %v", err)
+	}
+	if _, err := gaugewire(t, binary, home, "uninstall", "--settings", settingsPath); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	restored, err := os.ReadFile(settingsPath)
+	if err != nil || string(restored) != original {
+		t.Fatalf("settings after uninstall: %q err %v", restored, err)
+	}
+}
+
+func TestDoctorExitsOneWhenUnhealthy(t *testing.T) {
+	t.Parallel()
+	binary := buildBinary(t, "")
+	home := integrationHome(t, "", "[]")
+	_, err := gaugewire(t, binary, home, "doctor", "--settings", filepath.Join(t.TempDir(), "settings.json"))
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok || exitErr.ExitCode() != 1 {
+		t.Fatalf("got %v, want exit code 1", err)
+	}
+}
+
 func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "")

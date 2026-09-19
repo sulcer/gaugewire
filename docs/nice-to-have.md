@@ -48,13 +48,6 @@ revisit, reference. Remove an entry when it ships or when the trigger is retired
 - **Trigger:** binaries are distributed outside the fleet or the repo goes public.
 - **Reference:** [repo scaffold spec](spec/repo-scaffold/README.md).
 
-## Newest dead-letter reason in `status`
-
-- **What:** `status` shows the newest dead-letter reason.
-- **Why deferred:** needs a dead-letter reader that tolerates `.unreadable` files.
-- **Trigger:** `doctor` lands.
-- **Reference:** [spool and flush](spec/gaugewire/spool-and-flush.md).
-
 ## Docs-impact tool
 
 - **What:** map a diff to the spec pages that should be re-read, from a `code:` pointer in each

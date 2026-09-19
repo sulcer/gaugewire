@@ -8,7 +8,8 @@ Status: Draft · Partial · 2026-09-18 · Every command, the install and uninsta
 Gaugewire, keeps everything else in the file byte for byte, saves the original object for an
 exact restore, and refuses to overwrite an existing install without `--force`. `uninstall`
 restores the original object only if the setting still points at Gaugewire. `status` is
-offline; `doctor` checks everything including the sink.
+offline; `doctor` runs every offline check plus, once the Databox sink lands, its three sink
+checks.
 
 ## Commands
 
@@ -17,14 +18,14 @@ offline; `doctor` checks everything including the sink.
 | `gaugewire statusline` | The [hot path](hot-path.md). Only Claude Code invokes it. |
 | `gaugewire flush [--requeue]` | One [flusher run](spool-and-flush.md). `--requeue` first moves dead letters back to pending. |
 | `gaugewire install [--settings path] [--node-alias a] [--account-alias b] [--force]` | See below. |
-| `gaugewire uninstall [--purge]` | Restore the status line; `--purge` also deletes the home directory. |
+| `gaugewire uninstall [--settings path] [--purge]` | Restore the status line; `--purge` also deletes the home directory. |
 | `gaugewire status` | Offline view of state and spool. |
-| `gaugewire doctor` | Full health check, exit 1 on any failing check. |
+| `gaugewire doctor [--settings path]` | Full health check, exit 1 on any failing check. |
 | `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--test-ingest]` | See [databox-sink](databox-sink.md). |
 | `gaugewire version` | Version, commit, date from build info. |
 
-Built: `statusline`, `flush`, `status`, `version`. Not built: `install`, `uninstall`, `doctor`,
-`databox bootstrap`.
+Built: every command except `databox bootstrap`. `doctor`'s sink auth, datasets and last
+ingestion rows arrive with the Databox sink.
 
 `flush -h` prints usage and exits 0. A retryable delivery failure makes `flush` exit 1, which is
 harmless for the detached run: a later status-line invocation relaunches it when work is still
@@ -35,27 +36,90 @@ due.
 ```mermaid
 flowchart TD
     A[load or create config.json<br/>generate node.id, account.id if missing] --> B["read settings.json<br/>missing: empty object"]
-    B --> C{"statusLine.command already gaugewire?"}
-    C -->|yes, no --force| X[refuse]
-    C --> D[save whole statusLine object as install.originalStatusLine<br/>save its command as renderer.command]
-    D --> E[backup settings.json.gaugewire-backup-timestamp]
-    E --> F["new object = original with command replaced by<br/>absolute gaugewire path + statusline"]
-    F --> G[splice only the statusLine value into the file bytes]
-    G --> H[atomic write, print what changed]
+    B --> C{"statusLine.command<br/>already gaugewire?"}
+    C -->|yes, no install record| X1[refuse, even with --force]
+    C -->|yes, no --force| X2[refuse: pass --force]
+    C --> D{"statusLine value<br/>a JSON object or absent?"}
+    D -->|no| X3[refuse: statusLine is not an object]
+    D --> E["new value = statusLine with command replaced by<br/>the gaugewire path + statusline"]
+    E --> F[splice only that value into the settings bytes]
+    F --> G["not already ours: save the whole original statusLine<br/>as install.originalStatusLine, its command as renderer.command"]
+    G --> H[record settingsPath and installedCommand,<br/>save config.json]
+    H --> I{"settings.json<br/>already existed?"}
+    I -->|yes| J[backup settings.json.gaugewire-backup-timestamp]
+    I -->|no| K[create the settings directory]
+    J --> L[atomic write settings.json]
+    K --> L
+    L --> M[print what changed]
 ```
 
 Rules: aliases default to the hostname and `claude-01`; `padding`, `refreshInterval`,
-`hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added only when no object
-existed; the binary path comes from `os.Executable()` and uses forward slashes on Windows; the
+`hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added whenever the object
+has no `type`, and an absent `statusLine` or an object with no members becomes a fresh
+`{"type":"command","command":…}`; the binary path comes from `os.Executable()` and uses forward
+slashes on Windows, per the [status line page](https://code.claude.com/docs/en/statusline); the
 splice locates the top-level member by decoder token offsets so no other byte of the file
 changes. `refreshInterval` is never removed by install; `doctor` may advise.
 
+`config.json` is saved before the settings file is touched, so every intermediate state — a
+crash between the two writes — still knows how to get back to the user's original status line.
+A status line already pointing at Gaugewire is refused unless `--force`; it is refused outright,
+`--force` or not, when `config.json` has no install record to restore from, and the message
+points at the newest `.gaugewire-backup-*` file to restore by hand. `--force` keeps the saved
+original and only refreshes the installed command. The backup is
+`settings.json.gaugewire-backup-<UTC timestamp>` with mode 0600, suffixed `-2`, `-3` and so on
+when a second install lands in the same second. `--settings` is resolved and stored as an
+absolute path. A `statusLine` whose value is not a JSON object is refused before anything is
+written, settings file or `config.json`. `install.originalStatusLine` is omitted from
+`config.json` entirely when there was no `statusLine` to save, rather than stored as `null`.
+The settings path is resolved through symlinks before it is used, so a dotfiles-managed file is
+edited in place and the backup sits next to the real file; writing through a temporary file and
+rename then replaces the real file rather than the link.
+The executable path is quoted only when it contains whitespace; assumption to verify on
+Windows: PowerShell requires `& "path" statusline` for a quoted path, which the installed
+command does not emit yet. A settings file with duplicate top-level keys is edited at the first
+occurrence; which one Claude Code honours is not documented and is an assumption to verify.
+
 ## Uninstall
+
+```mermaid
+flowchart TD
+    A[load config.json] -->|missing, or no install record| X["refuse: not installed"]
+    A --> B{"settings file<br/>exists?"}
+    B -->|no| W1["warning: path does not exist;<br/>nothing restored"]
+    B --> C{"statusLine already equals<br/>install.originalStatusLine?"}
+    C -->|yes| D["print already restored"]
+    C --> E{"statusLine.command equals<br/>install.installedCommand?"}
+    E -->|no| W2["warning: changed since install;<br/>nothing restored"]
+    E --> F["there was no original: delete the member<br/>else splice the original back and write"]
+    F --> G["print restored, or removed statusLine"]
+    D --> H["clear install in config.json"]
+    G --> H
+    W1 --> P{"--purge?"}
+    W2 --> P
+    H --> P
+    P -->|yes| Q["delete the home directory"]
+    P -->|no| R["done"]
+    Q --> R
+```
 
 If `statusLine.command` still equals `install.installedCommand`, restore
 `install.originalStatusLine` by the same splice (or delete the member when there was none) and
 clear `install` in config. Otherwise print a warning and change nothing. Local data stays
 unless `--purge`.
+
+The restored value is `install.originalStatusLine` compacted onto one line and written
+JSON-equal to the original, since `config.json` cannot keep the original's exact source bytes;
+every other byte of the settings file is left untouched. (The timestamped backup written at
+install time, by contrast, is a byte-exact copy an operator can restore by hand.) `--purge`
+deletes the home directory even when the status line was changed since install; the warning
+about the change is still printed first. When the settings file already equals the original,
+uninstall prints `already restored` and clears the install record without writing the settings
+file again — this is also how a run that died between writing the settings file and saving
+`config.json` finishes cleanly on the next attempt. A missing settings file prints
+`warning: <path> does not exist; nothing restored` and leaves the install record untouched, since
+nothing was restored. `--settings` overrides the recorded path. An invalid `config.json` is
+refused before anything is touched.
 
 ## status
 
@@ -78,7 +142,12 @@ databox-main:      last flush ok 2m ago
 ```
 
 One line per enabled sink, keyed by its id. When `state.json` cannot be decoded, the first output
-line is `state.json is not valid; showing a fresh state` and the view shows a fresh state.
+line is `state.json is not valid; showing a fresh state` and the view shows a fresh state. The
+`Dead letters` line above shows `0` because the example has none; whenever there is at least one,
+it grows a ` · newest: <reason>` suffix naming the newest dead letter's reason. When
+`dead-letter/` itself cannot be read, the first output line is
+`dead-letter/ could not be read; newest reason unavailable` and the rest of the view still
+renders.
 
 Reads `state.json` and counts spool files. No network.
 
@@ -89,19 +158,28 @@ Reads `state.json` and counts spool files. No network.
 | Configuration | `config.json` parses and validates |
 | Claude Code version | from the last observation, at least 2.1.251 |
 | Status-line integration | `settings.json` `statusLine.command` points at this binary |
-| Overrides | project `.claude/settings.json` or `settings.local.json` in the current directory overriding `statusLine`; `disableAllHooks` in any settings file |
-| Renderer | saved command exists and runs with a sample payload |
+| Overrides | project `.claude/settings.local.json` or `.claude/settings.json` in the current directory overriding `statusLine`; `disableAllHooks: true` in any of those files or the settings file, in that precedence order |
+| Renderer | the saved command runs against a documented sample status-line payload under a five-second timeout; a failure reports `<command>: <error>` |
 | Identity | node and account ids are UUIDs, aliases set |
-| Home directory | exists, permissions, state readable, spool writable |
+| Home directory | exists, state readable, spool writable |
 | Quota windows | status of each window and age of the last observation |
 | `refreshInterval` | advice only when set |
-| Sink auth | `GET /v1/auth/validate-key` |
-| Datasets | both ids present in `GET /v1/data-sources/{id}/datasets` |
-| Last ingestion | latest ingestion id per dataset polled; `failed` shown with its errors |
-| Spool | pending and dead-letter counts with the newest reason |
+| Sink auth (with the Databox sink) | `GET /v1/auth/validate-key` |
+| Datasets (with the Databox sink) | both ids present in `GET /v1/data-sources/{id}/datasets` |
+| Last ingestion (with the Databox sink) | latest ingestion id per dataset polled; `failed` shown with its errors |
+| Spool | pending and dead-letter counts, the newest dead-letter reason, and the count of `.unreadable` files |
 
-Output is one line per check with ✓ or ✗ and a final `HEALTHY` or `UNHEALTHY`; exit code 1 on
-any ✗.
+The overrides check reads `.claude/settings.local.json` before `.claude/settings.json` in the
+current directory, then the settings file, matching Claude Code's documented precedence
+([settings](https://code.claude.com/docs/en/settings)); it treats `disableAllHooks: true` as a
+failure because the settings reference states it disables the status line
+([settings reference](https://code.claude.com/docs/en/settings-reference)). Doctor reads the
+`.claude/` directory of the current directory only, while Claude Code, run from a subdirectory,
+also reads the repository root's `.claude/settings.local.json`. Without `--settings`, doctor
+checks the file `install` recorded in `config.json` and falls back to the user settings file.
+
+Output is one line per check, `✓ name: detail` or `✗ name: detail`, a blank line, then `HEALTHY`
+or `UNHEALTHY`; exit code 1 on any ✗.
 
 ## Logging
 

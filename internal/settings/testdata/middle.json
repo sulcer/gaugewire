@@ -1,0 +1,10 @@
+{
+  "model": "claude-sonnet-5",
+  "statusLine": {
+    "type": "command",
+    "command": "jq -r '.model.display_name'",
+    "padding": 2,
+    "hideVimModeIndicator": true
+  },
+  "cleanupPeriodDays": 20
+}

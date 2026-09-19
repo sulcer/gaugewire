@@ -33,8 +33,8 @@ flowchart TB
     DBX --> Q
 ```
 
-Dependency direction: `source → quota`; `quota → nothing`; `store, sink → quota`;
-`sink/databox → sink, quota`; `cli → everything`. No package imports `cli`.
+Dependency direction: `source → quota`; `quota → nothing`; `settings → nothing`;
+`store, sink → quota`; `sink/databox → sink, quota`; `cli → everything`. No package imports `cli`.
 
 ## Package layout
 
@@ -43,6 +43,7 @@ cmd/gaugewire/main.go        parse subcommand, call run(), exit code
 internal/quota/              Snapshot, Window, WindowStatus, Reduce, Decide. Pure, no I/O
 internal/source/claude/      status-line JSON → Observation, version gate
 internal/store/              home dir, atomic write, flock locks, state.json, pending/, dead-letter/
+internal/settings/           edit one member of Claude Code's settings file by byte offsets
 internal/renderer/           run the saved command with exact stdin, forward stdout
 internal/sink/               Sink interface, Flusher, per-sink delivery bookkeeping
 internal/sink/databox/       v1 client, dataset records, error classification, bootstrap calls

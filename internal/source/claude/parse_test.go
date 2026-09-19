@@ -116,3 +116,18 @@ func TestParseTreatsAnUnparseableVersionAsUnsupported(t *testing.T) {
 		t.Fatalf("got %v, want ErrUnsupportedVersion", err)
 	}
 }
+
+// "2.1.251-beta" is false: parseVersion requires three integer components and
+// rejects a "-beta" suffix on the patch number, so it never reaches the
+// comparison.
+func TestVersionSupported(t *testing.T) {
+	t.Parallel()
+	cases := map[string]bool{"2.1.251": true, "2.1.274": true, "3.0.0": true, "2.1.250": false, "2.0.999": false, "": false, "latest": false, "2.1.251-beta": false}
+	got := map[string]bool{}
+	for v := range cases {
+		got[v] = VersionSupported(v)
+	}
+	if diff := cmp.Diff(cases, got); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}

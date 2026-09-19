@@ -19,6 +19,12 @@ import (
 // in the documented shape.
 const MinimumVersion = "2.1.251"
 
+// VersionSupported reports whether a Claude Code version string is at least
+// MinimumVersion, the first release whose status-line payload carries rate limits.
+func VersionSupported(version string) bool {
+	return versionAtLeast(version, MinimumVersion)
+}
+
 var (
 	// ErrUnsupportedVersion means the payload's version is missing, unparseable
 	// or older than MinimumVersion; the observation must be skipped.
@@ -48,7 +54,7 @@ func Parse(r io.Reader, capturedAt time.Time) (quota.Observation, []string, erro
 	if err := json.NewDecoder(r).Decode(&p); err != nil {
 		return quota.Observation{}, nil, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 	}
-	if !versionAtLeast(p.Version, MinimumVersion) {
+	if !VersionSupported(p.Version) {
 		return quota.Observation{}, nil, ErrUnsupportedVersion
 	}
 	obs := quota.Observation{CapturedAt: capturedAt.UTC(), ClaudeCodeVersion: p.Version}

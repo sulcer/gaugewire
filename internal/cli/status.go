@@ -35,11 +35,23 @@ func runStatus(stdout io.Writer, now time.Time, zone *time.Location) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(stdout, renderStatus(cfg, state, pending, dead, now, zone))
+	newest := ""
+	entries, _, err := store.ListDeadLetters(home)
+	switch {
+	case err != nil:
+		if _, werr := io.WriteString(stdout, "dead-letter/ could not be read; newest reason unavailable\n"); werr != nil {
+			return werr
+		}
+	case len(entries) > 0:
+		newest = entries[0].Reason
+	}
+	_, err = io.WriteString(stdout, renderStatus(cfg, state, pending, dead, newest, now, zone))
 	return err
 }
 
-func renderStatus(cfg config.Config, state store.State, pending, dead int, now time.Time, zone *time.Location) string {
+// renderStatus renders the offline view. newest is the reason of the newest
+// dead letter, or empty when there is none.
+func renderStatus(cfg config.Config, state store.State, pending, dead int, newest string, now time.Time, zone *time.Location) string {
 	var b strings.Builder
 	b.WriteString("Gaugewire\n\n")
 	fmt.Fprintf(&b, "Node:     %s\nAccount:  %s\n\n", cfg.Node.Alias, cfg.Account.Alias)
@@ -51,7 +63,12 @@ func renderStatus(cfg config.Config, state store.State, pending, dead int, now t
 		publishedAt = &state.LastPublished.CapturedAt
 	}
 	fmt.Fprintf(&b, "Last publish:      %s\n\n", ago(publishedAt, now))
-	fmt.Fprintf(&b, "Pending events:    %d\nDead letters:      %d\n\n", pending, dead)
+	suffix := ""
+	if newest != "" {
+		suffix = " · newest: " + newest
+	}
+	fmt.Fprintf(&b, "Pending events:    %d\n", pending)
+	fmt.Fprintf(&b, "Dead letters:      %d%s\n\n", dead, suffix)
 	for _, s := range cfg.Sinks {
 		if !s.Enabled {
 			continue

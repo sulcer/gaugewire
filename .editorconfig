@@ -16,3 +16,8 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+
+[internal/settings/testdata/**]
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = false

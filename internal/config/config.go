@@ -67,7 +67,7 @@ type Renderer struct {
 type Install struct {
 	SettingsPath       string          `json:"settingsPath"`
 	InstalledCommand   string          `json:"installedCommand"`
-	OriginalStatusLine json.RawMessage `json:"originalStatusLine"`
+	OriginalStatusLine json.RawMessage `json:"originalStatusLine,omitempty"`
 }
 
 // Publishing holds the dedupe thresholds.
