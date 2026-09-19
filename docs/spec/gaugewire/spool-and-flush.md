@@ -87,10 +87,12 @@ when due work exists. With Claude idle, nothing retries, by design.
 | HTTP 408, 429, 500, 502, 503, 504 | retryable |
 | HTTP 401, 403 | permanent |
 | HTTP 400, 404, 413, 422 and other 4xx | permanent |
-| 2xx without the sink's acceptance marker | permanent |
+| 2xx whose body does not decode, or without the sink's acceptance marker | retryable (`invalid_response`) |
 
 Classification goes by HTTP status first; a body error code is recorded as `lastErrorCode`
-when present and never changes the class.
+when present and never changes the class. A 2xx that is not the API's answer is retried rather
+than dead-lettered, because a captive portal or a proxy can answer 200 with an HTML page; the
+Databox sink's acceptance marker is the `ingestionId`.
 
 ## Dead letters and requeue
 

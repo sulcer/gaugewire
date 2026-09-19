@@ -45,7 +45,8 @@ assumptions, is outstanding.
 - Whether a throttling 429 carries the JSON envelope. The classifier does not depend on it.
 - What status codes errors other than the documented 400 and 401 arrive with.
 - Whether an error always arrives with a non-2xx status; a 200 carrying `"status":"error"` would
-  be read as success today.
+  be read as success by key validation today, and retried by an ingestion, which needs its
+  `ingestionId`.
 - Whether the list endpoints return every item without pagination. The ingestions list documents
   `page` and `pageSize`; the accounts, data-sources and datasets lists document neither.
 
