@@ -126,6 +126,9 @@ func TestFlushRetriesOnRateLimit(t *testing.T) {
 	var stdout bytes.Buffer
 	err := runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
 	pending, _ := store.ListPending(home)
+	if len(pending) != 1 {
+		t.Fatalf("pending events %d, want exactly one still spooled", len(pending))
+	}
 	got := struct {
 		err      bool
 		out      string

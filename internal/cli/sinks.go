@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -32,12 +33,17 @@ func buildSinks(cfg config.Config, home string, logger *slog.Logger) []sink.Sink
 // buildDataboxSink assembles one Databox sink. config.Validate already rejects
 // every other type, so the type needs no switch until a second one exists.
 func buildDataboxSink(s config.Sink, home string, logger *slog.Logger) (sink.Sink, error) {
+	// Checked before the key is read so a sink that cannot deliver never holds
+	// a key in memory and never builds a client pointed at the default host.
+	if s.HistoryDatasetID == "" || s.CurrentDatasetID == "" {
+		return nil, errors.New("both dataset ids are required; run gaugewire databox bootstrap")
+	}
 	key, warn, err := loadAPIKey(s.Credentials, os.Getenv)
 	if err != nil {
 		return nil, err
 	}
 	if warn != "" {
-		logger.Warn(warn, "sink", s.ID)
+		logger.Warn("key file permissions", "sink", s.ID, "reason", warn)
 	}
 	base := s.BaseURL
 	if base == "" {

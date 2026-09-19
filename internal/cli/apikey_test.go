@@ -80,6 +80,10 @@ func TestLoadAPIKeyWarnsAboutAWorldReadableFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("k"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	// WriteFile's mode is masked by the umask; chmod is not.
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
 	key, warn, err := loadAPIKey(config.Credentials{APIKeyFile: path}, func(string) string { return "" })
 	got := struct {
 		key  string

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/sulcer/gaugewire/internal/config"
@@ -26,12 +25,7 @@ func loadAPIKey(creds config.Credentials, getenv func(string) string) (key, warn
 		if key == "" {
 			return "", "", fmt.Errorf("key file %s is empty", creds.APIKeyFile)
 		}
-		if runtime.GOOS != "windows" {
-			if info, statErr := os.Stat(creds.APIKeyFile); statErr == nil && info.Mode().Perm()&0o077 != 0 {
-				warn = "key file " + creds.APIKeyFile + " is readable by others; use mode 0600"
-			}
-		}
-		return key, warn, nil
+		return key, keyFileWarning(creds.APIKeyFile), nil
 	}
 	name := creds.APIKeyEnv
 	if name == "" {
