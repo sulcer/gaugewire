@@ -43,7 +43,7 @@ func TestValidateKeySendsTheHeader(t *testing.T) {
 	want := struct {
 		err   bool
 		calls []call
-	}{false, []call{{Method: "GET", Path: "/v1/auth/validate-key", Key: testKey}}}
+	}{false, []call{{Method: "GET", Path: "/v1/auth/validate-key", Key: testKey, Accept: "application/json"}}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -116,15 +116,17 @@ func TestIngestReturnsTheIngestionID(t *testing.T) {
 	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-1","message":"accepted"}`)
 	id, err := client(t, f).Ingest(t.Context(), "ds-hist", []map[string]any{{"event_id": "evt-1", "five_hour_used_percentage": 24.0}})
 	got := struct {
-		id   string
-		err  bool
-		body string
-	}{id, err != nil, f.seen()[0].Body}
+		id          string
+		err         bool
+		contentType string
+		body        string
+	}{id, err != nil, f.seen()[0].ContentType, f.seen()[0].Body}
 	want := struct {
-		id   string
-		err  bool
-		body string
-	}{"ing-1", false, `{"records":[{"event_id":"evt-1","five_hour_used_percentage":24}]}`}
+		id          string
+		err         bool
+		contentType string
+		body        string
+	}{"ing-1", false, "application/json", `{"records":[{"event_id":"evt-1","five_hour_used_percentage":24}]}`}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
@@ -173,16 +175,20 @@ func TestErrorsNeverCarryTheKey(t *testing.T) {
 	}
 }
 
+// errTransport fails every request, with no port and no network involved.
+type errTransport struct{}
+
+func (errTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("dial")
+}
+
 func TestTransportFailureIsRetryable(t *testing.T) {
 	t.Parallel()
-	f := newFake(t)
-	url := f.server.URL
-	f.server.Close()
-	c, err := NewClient(url, testKey, &http.Client{})
+	c, err := NewClient("https://example.test", testKey, &http.Client{Transport: errTransport{}})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	err = c.ValidateKey(context.Background())
+	err = c.ValidateKey(t.Context())
 	class, code := sink.Classify(err)
 	if err == nil || class != sink.Retryable || code != "transport" {
 		t.Fatalf("err=%v class=%v code=%q, want retryable transport", err, class, code)
@@ -196,6 +202,28 @@ func TestUndecodableSuccessBodyIsRetryable(t *testing.T) {
 	_, err := client(t, f).Accounts(t.Context())
 	class, code := sink.Classify(err)
 	if err == nil || class != sink.Retryable || code != "invalid_response" || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err=%v class=%v code=%q, want retryable invalid_response", err, class, code)
+	}
+}
+
+func TestRedirectsAreNotFollowed(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.onRedirect("GET", "/v1/auth/validate-key", 302, f.server.URL+"/elsewhere")
+	err := client(t, f).ValidateKey(t.Context())
+	class, code := sink.Classify(err)
+	if err == nil || class != sink.Retryable || code != "transport" || len(f.seen()) != 1 {
+		t.Fatalf("err=%v class=%v code=%q calls=%d; want a retryable transport error and one call", err, class, code, len(f.seen()))
+	}
+}
+
+func TestIngestWithoutAnIngestionIDIsRetryable(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success"}`)
+	_, err := client(t, f).Ingest(t.Context(), "ds-hist", []map[string]any{{"event_id": "evt-1"}})
+	class, code := sink.Classify(err)
+	if err == nil || class != sink.Retryable || code != "invalid_response" {
 		t.Fatalf("err=%v class=%v code=%q, want retryable invalid_response", err, class, code)
 	}
 }

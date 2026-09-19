@@ -70,9 +70,11 @@ type Ingestion struct {
 }
 
 // NewClient builds a client for baseURL with the given key. A nil httpClient
-// uses a default one; per-request timeouts come from the context.
+// uses a default one; per-request timeouts come from the context. The caller's
+// client is copied rather than mutated.
 func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
-	if strings.TrimSpace(baseURL) == "" {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
 		return nil, errors.New("databox: base URL is empty")
 	}
 	if apiKey == "" {
@@ -81,7 +83,13 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
-	return &Client{base: strings.TrimRight(baseURL, "/"), key: apiKey, http: httpClient}, nil
+	// Following a redirect would replay the x-api-key header to whatever host
+	// the Location header names, so a redirect is a failed request instead.
+	copied := *httpClient
+	copied.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return errors.New("databox: redirects are not followed")
+	}
+	return &Client{base: strings.TrimRight(base, "/"), key: apiKey, http: &copied}, nil
 }
 
 // ValidateKey confirms the key with GET /v1/auth/validate-key.
