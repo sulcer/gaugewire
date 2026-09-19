@@ -16,7 +16,7 @@ offline; `doctor` runs every offline check plus the sink rows of each enabled Da
 |---|---|
 | `gaugewire statusline` | The [hot path](hot-path.md). Only Claude Code invokes it. |
 | `gaugewire flush [--requeue]` | One [flusher run](spool-and-flush.md). `--requeue` first moves dead letters back to pending. |
-| `gaugewire install [--settings path] [--node-alias a] [--account-alias b] [--force]` | See below. |
+| `gaugewire install [--settings path] [--node-alias a] [--account-alias b] [--account-id uuid] [--force]` | See below. |
 | `gaugewire uninstall [--settings path] [--purge]` | Restore the status line; `--purge` also deletes the home directory. |
 | `gaugewire status` | Offline view of state and spool. |
 | `gaugewire doctor [--settings path]` | Full health check, exit 1 on any failing check. |
@@ -35,7 +35,8 @@ due. An enabled sink that cannot be built (no API key, no dataset ids) fails the
 
 ```mermaid
 flowchart TD
-    A[load or create config.json<br/>generate node.id, account.id if missing] --> B["read settings.json<br/>missing: empty object"]
+    A[load or create config.json<br/>generate node.id, account.id if missing] -->|--account-id not a UUID| X0[refuse before any write]
+    A --> B["read settings.json<br/>missing: empty object"]
     B --> C{"statusLine.command<br/>already gaugewire?"}
     C -->|yes, no install record| X1[refuse, even with --force]
     C -->|yes, no --force| X2[refuse: pass --force]
@@ -53,7 +54,11 @@ flowchart TD
     L --> M[print what changed]
 ```
 
-Rules: aliases default to the hostname and `claude-01`; `padding`, `refreshInterval`,
+Rules: aliases default to the hostname and `claude-01`; `--account-id` must be a UUID, is
+stored in canonical lowercase and overrides the saved id, so every machine on one subscription
+can share the id the first install printed
+([ADR](../../adr/2026-09-19-one-account-id-per-subscription.md)); without it install keeps the
+saved id or generates one; `padding`, `refreshInterval`,
 `hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added whenever the object
 has no `type`, and an absent `statusLine` or an object with no members becomes a fresh
 `{"type":"command","command":…}`; the binary path comes from `os.Executable()` and uses forward
@@ -66,7 +71,11 @@ crash between the two writes — still knows how to get back to the user's origi
 A status line already pointing at Gaugewire is refused unless `--force`; it is refused outright,
 `--force` or not, when `config.json` has no install record to restore from, and the message
 points at the newest `.gaugewire-backup-*` file to restore by hand. `--force` keeps the saved
-original and only refreshes the installed command. The backup is
+original and refreshes the installed command; with `--account-id` it also replaces the saved
+account id, which is how an installed machine joins a subscription. An `--account-id` that is
+not a UUID is refused before anything is written, settings file or `config.json`. Install's
+`--account-id` is Gaugewire's subscription id; the unrelated numeric Databox account is
+`databox bootstrap --account-id`. The backup is
 `settings.json.gaugewire-backup-<UTC timestamp>` with mode 0600, suffixed `-2`, `-3` and so on
 when a second install lands in the same second. `--settings` is resolved and stored as an
 absolute path. A `statusLine` whose value is not a JSON object is refused before anything is

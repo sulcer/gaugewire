@@ -25,8 +25,20 @@ If the settings file already existed, install writes a timestamped backup next t
 before install touched it. Keep this file; it is the only exact copy of the pre-install state.
 
 Running `install` again once Gaugewire is already the status line does nothing and refuses,
-unless `--force` is passed to reinstall over it (this keeps the originally saved command and
-only refreshes the path to the binary).
+unless `--force` is passed to reinstall over it. `--force` keeps the originally saved command
+and refreshes the path to the binary; with `--account-id` it also replaces the account id.
+
+### More than one machine on one subscription
+
+The first install prints `account:      <alias> <id>`. On every other machine logged into the
+same Claude subscription, pass that id so the Current dataset keeps one row per subscription:
+
+```bash
+gaugewire install --node-alias <name> --account-id <id>
+```
+
+A machine that is already installed joins with `--force` added. The id is also in the first
+machine's `config.json` under `account.id`.
 
 ## 2. Verify
 
