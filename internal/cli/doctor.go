@@ -127,7 +127,7 @@ func diagnose(ctx context.Context, in doctorInput) []check {
 		checkSpool(in.home),
 	}
 	for _, s := range in.cfg.Sinks {
-		if s.Enabled {
+		if s.Enabled && s.Type == config.SinkTypeDatabox {
 			checks = append(checks, checkSink(ctx, in, s, state.LastIngestion[s.ID])...)
 		}
 	}

@@ -205,13 +205,9 @@ func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.Ing
 func sinkClient(in doctorInput, s config.Sink) (*databox.Client, error) {
 	key, _, err := loadAPIKey(s.Credentials, in.getenv)
 	if err != nil {
-		return nil, fmt.Errorf("no API key: %w", err)
+		return nil, err
 	}
-	base := s.BaseURL
-	if base == "" {
-		base = databox.DefaultBaseURL
-	}
-	return databox.NewClient(base, key, in.httpClient)
+	return newDataboxClient(s, key, in.httpClient)
 }
 
 func checkSinkAuth(ctx context.Context, client *databox.Client, name string) check {
@@ -223,7 +219,12 @@ func checkSinkAuth(ctx context.Context, client *databox.Client, name string) che
 
 // checkSinkDatasets confirms the configured dataset ids still exist in the
 // data source; a dataset deleted in the product is why delivery starts failing.
+// An unconfigured data source id is reported without a request: there is
+// nothing to list it against.
 func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sink, name string) check {
+	if s.DataSourceID == 0 {
+		return check{name: name, detail: "data source not configured"}
+	}
 	list, err := client.Datasets(ctx, s.DataSourceID)
 	if err != nil {
 		return check{name: name, detail: err.Error()}
@@ -234,8 +235,12 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 	}
 	var found, missing []string
 	for _, want := range []struct{ label, id string }{{"history", s.HistoryDatasetID}, {"current", s.CurrentDatasetID}} {
+		if want.id == "" {
+			missing = append(missing, want.label+" not configured")
+			continue
+		}
 		part := want.label + " " + want.id
-		if want.id != "" && present[want.id] {
+		if present[want.id] {
 			found = append(found, part)
 			continue
 		}
@@ -249,7 +254,9 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 
 // checkLastIngestion re-reads what the sink last had accepted. An Ingestion's
 // Status mirrors the response envelope, which is "success" for anything the API
-// hands back, so whether the rows landed is decided by the rejected count.
+// hands back, so whether the rows landed is decided by the rejected count. A
+// recorded ingestion whose dataset id is no longer configured, or whose lookup
+// errors, fails that dataset's part without stopping the other one.
 func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Sink, rec store.IngestionRecord, name string) check {
 	accepted := true
 	var parts []string
@@ -260,9 +267,16 @@ func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Si
 		if want.ingestion == "" {
 			continue
 		}
+		if want.dataset == "" {
+			accepted = false
+			parts = append(parts, want.label+" not configured")
+			continue
+		}
 		ing, err := client.Ingestion(ctx, want.dataset, want.ingestion)
 		if err != nil {
-			return check{name: name, detail: err.Error()}
+			accepted = false
+			parts = append(parts, want.label+" error: "+err.Error())
+			continue
 		}
 		part := want.label + " " + ing.Status
 		if ing.Metrics.Rejected > 0 {

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -10,6 +11,15 @@ import (
 	"github.com/sulcer/gaugewire/internal/sink"
 	"github.com/sulcer/gaugewire/internal/sink/databox"
 )
+
+// newDataboxClient builds the client for a sink, defaulting the base URL.
+func newDataboxClient(s config.Sink, key string, httpClient *http.Client) (*databox.Client, error) {
+	base := s.BaseURL
+	if base == "" {
+		base = databox.DefaultBaseURL
+	}
+	return databox.NewClient(base, key, httpClient)
+}
 
 // buildSinks turns the enabled sink configurations into sinks. A sink that
 // cannot be built is logged with the reason and skipped; its events stay
@@ -45,11 +55,7 @@ func buildDataboxSink(s config.Sink, home string, logger *slog.Logger) (sink.Sin
 	if warn != "" {
 		logger.Warn("key file permissions", "sink", s.ID, "reason", warn)
 	}
-	base := s.BaseURL
-	if base == "" {
-		base = databox.DefaultBaseURL
-	}
-	client, err := databox.NewClient(base, key, nil)
+	client, err := newDataboxClient(s, key, nil)
 	if err != nil {
 		return nil, err
 	}
