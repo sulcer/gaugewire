@@ -14,6 +14,9 @@ assumptions, is outstanding.
 
 ## API facts (public documentation)
 
+Source: the public developer documentation at https://developers.databox.com, fetched
+2026-09-19.
+
 - Base `https://api.databox.com`, header `x-api-key`, JSON request and response bodies, every
   response carries `requestId`.
 - `GET /v1/auth/validate-key`: 200 when the key is valid, 401 when it is missing or invalid.
@@ -79,6 +82,7 @@ sequenceDiagram
     participant F as flusher
     participant H as History dataset
     participant C as Current dataset
+    F->>F: load lastIngestion under state.lock<br/>(lock timeout: retry the chunk, nothing sent)
     F->>H: POST data, one record per snapshot
     H-->>F: accepted, ingestionId
     alt newest capturedAt > lastIngestion.currentCapturedAt
@@ -99,8 +103,12 @@ snapshot's `capturedAt` is not strictly after what is already recorded, so an eq
 is skipped too. `published_at` (History) and `last_seen_at` (Current) are the send time, not the
 snapshot's `capturedAt`.
 
-Once History has accepted the chunk — and Current too, when the guard sent it a request — the
-sink saves its ingestion record — the two ingestion ids and the `capturedAt` Current now holds —
+Before posting anything, the sink loads its ingestion record from `state.json` under
+`state.lock`, since the guard needs it. A load that fails — the lock wait ran out, the file could
+not be read — fails the chunk as retryable before any request; nothing is lost, because a retry
+resends History, which is an upsert. A corrupt `state.json` is logged and read as no record, so
+Current is sent. Once History has accepted the chunk — and Current too, when the guard sent it a
+request — the sink saves its ingestion record — the two ingestion ids and the `capturedAt` Current now holds —
 in `state.json` under `state.lock`. A failure to save is logged and never retried, because the
 API already accepted the data; the chunk is not failed for it. A lost save (the `state.lock`
 wait timed out) leaves the previous record in place, so the `currentCapturedAt` guard is
@@ -114,8 +122,25 @@ ingestion status endpoint's documented shape carries metrics but no error list, 
 `status` field is only the response envelope's — `success` whenever the API accepted the
 request, whether or not any record was rejected — so `doctor` judges an ingestion by its
 `rejectedRecordsCount`, never by `status`. The stricter verify-before-ack mode is in the
-nice-to-have ledger. Decision:
-[ADR](../../adr/2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md).
+nice-to-have ledger. Decisions:
+[acknowledge on accept](../../adr/2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md),
+amended by
+[judge ingestions by rejected records](../../adr/2026-09-19-doctor-judges-ingestions-by-rejected-records.md).
+
+## Error classes
+
+The flusher's classes are in [spool-and-flush](spool-and-flush.md#error-classes); the client
+maps the API onto them:
+
+- The HTTP status decides the class; the error envelope's first `code` names it, else
+  `invalid_api_key` (401), `forbidden` (403), `timeout` (408), `rate_limited` (429),
+  `server_error` (5xx) or `invalid_request` (other 4xx).
+- A 2xx whose body does not decode, or an ingestion response without `ingestionId`, is
+  retryable `invalid_response`.
+- A redirect is never followed and is permanent `redirect`.
+- More than 100 records in one ingestion is permanent `too_many_records`, before any request.
+- A base URL that is not `https`, other than plain `http` to `localhost` or a loopback address,
+  is refused when the client is built, so the sink is not built and the flush fails.
 
 ## Credentials
 
@@ -124,8 +149,9 @@ shell profile) or the environment variable named by `apiKeyEnv`. A key file read
 is still used, with a warning, rather than refused; `doctor`'s sink auth row shows the warning
 next to `key valid`. A key file that does not exist is reported without its path, since a key
 pasted where the path belongs would otherwise be printed back. The key is never logged, never
-stored in config, state or events. Redirects are refused, so the `x-api-key` header is never replayed to
-another host.
+stored in config, state or events. It travels over https only — plain http is accepted to this
+machine alone, for tests — and redirects are refused as permanent errors, so the `x-api-key`
+header never crosses the network in clear and is never replayed to another host.
 
 ## Bootstrap
 
@@ -174,7 +200,7 @@ heartbeat is missing or does not carry this send's time, since an unrecorded ing
 record an earlier run left behind, would otherwise look like a working sink. So run bootstrap
 at setup, and `gaugewire databox bootstrap --test-ingest` again after the first observation;
 bootstrap is idempotent, so the second run creates nothing. A key-file permission warning
-from bootstrap goes to stderr, not only to the log.
+from bootstrap goes to stderr.
 
 ## Open questions
 

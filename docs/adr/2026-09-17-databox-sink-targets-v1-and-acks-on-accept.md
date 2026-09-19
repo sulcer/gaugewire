@@ -6,6 +6,8 @@ decision-date: 2026-09-17
 
 # The Databox sink targets the documented v1 API and acknowledges on accept
 
+Amended by: 2026-09-19-doctor-judges-ingestions-by-rejected-records.md (doctor's ingestion check)
+
 ## Members
 
 Repo owner (@sulcer), Claude Code.

@@ -79,10 +79,11 @@ sequenceDiagram
     end
     GW->>CC: renderer stdout, exit 0
     F->>S: try flush.lock
+    F->>S: sink loads lastIngestion under state.lock
     F->>D: POST History, POST Current
     D-->>F: accepted
-    F->>S: delete event
     F->>S: sink records lastIngestion under state.lock
+    F->>S: delete event
     F->>S: unlock, exit
 ```
 

@@ -87,6 +87,7 @@ when due work exists. With Claude idle, nothing retries, by design.
 | HTTP 408, 429, 500, 502, 503, 504 | retryable |
 | HTTP 401, 403 | permanent |
 | HTTP 400, 404, 413, 422 and other 4xx | permanent |
+| redirect (never followed) | permanent |
 | 2xx whose body does not decode, or without the sink's acceptance marker | retryable (`invalid_response`) |
 
 Classification goes by HTTP status first; a body error code is recorded as `lastErrorCode`
