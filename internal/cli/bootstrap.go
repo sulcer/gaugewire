@@ -14,7 +14,6 @@ import (
 	"uuid"
 
 	"github.com/sulcer/gaugewire/internal/config"
-	"github.com/sulcer/gaugewire/internal/logging"
 	"github.com/sulcer/gaugewire/internal/quota"
 	"github.com/sulcer/gaugewire/internal/sink"
 	"github.com/sulcer/gaugewire/internal/sink/databox"
@@ -40,7 +39,7 @@ type bootstrapOptions struct {
 
 func runDatabox(ctx context.Context, args []string, info BuildInfo, streams IO) error {
 	if len(args) == 0 || args[0] != "bootstrap" {
-		return fmt.Errorf("usage: gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--test-ingest]: %w", ErrUsage)
+		return fmt.Errorf("databox: expected the bootstrap subcommand: %w", ErrUsage)
 	}
 	flags := flag.NewFlagSet("databox bootstrap", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)
@@ -60,14 +59,14 @@ func runDatabox(ctx context.Context, args []string, info BuildInfo, streams IO) 
 	if err != nil {
 		return err
 	}
-	return bootstrap(ctx, home, opts, streams.Stdout)
+	return bootstrap(ctx, home, opts, streams.Stdout, streams.Stderr)
 }
 
 // bootstrap validates the key, picks the account, reuses or creates the data
 // source and datasets, and records their ids in the sink entry. Repeated runs
 // create nothing. The ids are always resolved by title, so an id in config.json
 // that the account no longer holds is replaced rather than trusted.
-func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout io.Writer) error {
+func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout, stderr io.Writer) error {
 	cfg, err := config.Load(home)
 	if err != nil {
 		return err
@@ -84,7 +83,7 @@ func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout i
 		return err
 	}
 	if warn != "" {
-		fmt.Fprintln(stdout, "warning: "+warn)
+		fmt.Fprintln(stderr, "warning: "+warn)
 	}
 	client, err := databox.NewClient(opts.baseURL, key, opts.httpClient)
 	if err != nil {
@@ -226,14 +225,18 @@ func createdOrReused(created bool) string {
 }
 
 // sendTestHeartbeat sends one heartbeat built from the current state and prints
-// the ingestion ids, so the dashboard shows a row before Claude Code runs.
+// the ingestion ids, so the dashboard shows a row before Claude Code runs. The
+// ids are read back from state.json: an ingestion the sink could not record is
+// reported as a failure, because the next flush would resend it.
 func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entry config.Sink, client *databox.Client, opts bootstrapOptions, stdout io.Writer) error {
 	state, err := store.LoadState(home)
 	if err != nil && !errors.Is(err, store.ErrStateCorrupt) {
 		return err
 	}
+	logger, closeLog := openLogger(home)
+	defer closeLog()
 	ingestions := sink.StateIngestions{Home: home}
-	s, err := databox.New(entry.ID, client, databox.Datasets{History: entry.HistoryDatasetID, Current: entry.CurrentDatasetID}, ingestions, opts.now, logging.Discard())
+	s, err := databox.New(entry.ID, client, databox.Datasets{History: entry.HistoryDatasetID, Current: entry.CurrentDatasetID}, ingestions, opts.now, logger)
 	if err != nil {
 		return err
 	}
@@ -241,9 +244,12 @@ func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entr
 	if err = s.PublishBatch(ctx, []sink.Delivery{{EventType: quota.EventHeartbeat, Snapshot: snapshot}}); err != nil {
 		return fmt.Errorf("test ingest: %w", err)
 	}
-	ing, _, err := ingestions.LoadIngestion(entry.ID)
+	ing, found, err := ingestions.LoadIngestion(entry.ID)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return errors.New("test ingest was accepted but the ingestion record could not be read back; check logs/gaugewire.log")
 	}
 	fmt.Fprintf(stdout, "test ingest:      history %s, current %s\n", ing.History, ing.Current)
 	return nil

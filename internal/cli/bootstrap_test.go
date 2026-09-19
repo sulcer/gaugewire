@@ -119,7 +119,7 @@ func TestBootstrapCreatesEverythingOnAnEmptyAccount(t *testing.T) {
 	f.on("POST /v1/datasets", createdHistory, createdCurrent)
 	home := freshHome(t)
 	var stdout bytes.Buffer
-	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout)
+	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
 	got := struct {
 		err   bool
@@ -163,7 +163,7 @@ func TestBootstrapReusesExistingResources(t *testing.T) {
 	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
 	home := freshHome(t)
 	var stdout bytes.Buffer
-	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout)
+	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout, &bytes.Buffer{})
 	got := struct {
 		err   bool
 		out   string
@@ -195,7 +195,7 @@ func TestBootstrapNeedsAccountIDWhenSeveralAccounts(t *testing.T) {
 	f := newFakeDatabox(t)
 	f.on("GET /v1/auth/validate-key", validKey)
 	f.on("GET /v1/accounts", twoAccounts)
-	err := bootstrap(t.Context(), freshHome(t), bootstrapOpts(f), &bytes.Buffer{})
+	err := bootstrap(t.Context(), freshHome(t), bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
 	if !errors.Is(err, ErrChooseAccount) {
 		t.Fatalf("got %v, want ErrChooseAccount", err)
 	}
@@ -212,7 +212,7 @@ func TestBootstrapUsesTheGivenAccountID(t *testing.T) {
 	opts := bootstrapOpts(f)
 	opts.accountID = 7
 	home := freshHome(t)
-	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{})
+	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
 	if err != nil || cfg.Sinks[0].AccountID != 7 {
 		t.Fatalf("err=%v accountId=%d, want nil and 7", err, cfg.Sinks[0].AccountID)
@@ -224,7 +224,7 @@ func TestBootstrapStopsOnAnInvalidKeyWithoutWriting(t *testing.T) {
 	f := newFakeDatabox(t)
 	f.failWith("GET /v1/auth/validate-key", http.StatusUnauthorized)
 	home := freshHome(t)
-	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{})
+	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
 	if err == nil || len(cfg.Sinks) != 0 || len(f.seen()) != 1 {
 		t.Fatalf("err=%v sinks=%d calls=%v, want an error, no sink saved, one call", err, len(cfg.Sinks), f.seen())
@@ -246,7 +246,7 @@ func TestBootstrapRecordsTheKeyFilePath(t *testing.T) {
 	opts := bootstrapOpts(f)
 	opts.apiKeyFile = keyFile
 	opts.getenv = func(string) string { return "" }
-	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{})
+	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
 	if err != nil || cfg.Sinks[0].Credentials.APIKeyFile != keyFile || cfg.Sinks[0].Credentials.APIKeyEnv != "" {
 		t.Fatalf("err=%v creds=%+v, want the key file recorded", err, cfg.Sinks[0].Credentials)
@@ -265,8 +265,35 @@ func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 	opts := bootstrapOpts(f)
 	opts.testIngest = true
 	var stdout bytes.Buffer
-	err := bootstrap(t.Context(), freshHome(t), opts, &stdout)
+	err := bootstrap(t.Context(), freshHome(t), opts, &stdout, &bytes.Buffer{})
 	if err != nil || !strings.HasSuffix(stdout.String(), "test ingest:      history ing-h, current ing-c\n") {
 		t.Fatalf("err=%v out=%q", err, stdout.String())
+	}
+}
+
+func TestRunDataboxRejectsMissingOrUnknownSubcommand(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "missing", args: nil},
+		{name: "unknown", args: []string{"nope"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			err := runDatabox(t.Context(), tc.args, BuildInfo{}, IO{Stdout: &stdout, Stderr: &stderr})
+			got := struct {
+				usage  bool
+				stdout string
+			}{errors.Is(err, ErrUsage), stdout.String()}
+			if diff := cmp.Diff(struct {
+				usage  bool
+				stdout string
+			}{usage: true}, got, cmp.AllowUnexported(got)); diff != "" {
+				t.Fatalf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
