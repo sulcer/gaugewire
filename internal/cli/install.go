@@ -26,12 +26,17 @@ var ErrAlreadyInstalled = errors.New("status line already points at gaugewire; p
 // no record of what it replaced, so reinstalling would lose the original.
 var ErrNoInstallRecord = errors.New("status line already points at gaugewire but config.json has no install record; restore settings.json from the newest .gaugewire-backup-* file and run install again")
 
+// ErrInvalidAccountID means --account-id is not a UUID. Every machine on one
+// subscription must carry the same id, so it is copied from the first install.
+var ErrInvalidAccountID = errors.New("--account-id must be a UUID, as printed on the account line by install on the subscription's first machine")
+
 const defaultAccountAlias = "claude-01"
 
 type installOptions struct {
 	settingsPath string
 	nodeAlias    string
 	accountAlias string
+	accountID    string
 	force        bool
 	executable   string
 	now          func() time.Time
@@ -46,6 +51,7 @@ func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error
 	flags.StringVar(&opts.settingsPath, "settings", "", "Claude Code settings file (default: the user settings file)")
 	flags.StringVar(&opts.nodeAlias, "node-alias", "", "node alias (default: hostname)")
 	flags.StringVar(&opts.accountAlias, "account-alias", "", "account alias (default: claude-01)")
+	flags.StringVar(&opts.accountID, "account-id", "", "account id shared by every machine on the same Claude subscription (default: keep the saved id, or generate one)")
 	flags.BoolVar(&opts.force, "force", false, "reinstall over an existing gaugewire status line")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -156,6 +162,13 @@ func loadOrCreateConfig(home string, opts installOptions) (config.Config, error)
 		cfg = config.Default()
 	case err != nil:
 		return config.Config{}, err
+	}
+	if opts.accountID != "" {
+		id, err := uuid.Parse(opts.accountID)
+		if err != nil {
+			return config.Config{}, fmt.Errorf("%w: %w", ErrInvalidAccountID, err)
+		}
+		cfg.Account.ID = id.String()
 	}
 	if cfg.Node.ID == "" {
 		cfg.Node.ID = uuid.NewV4().String()
