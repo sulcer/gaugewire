@@ -1,13 +1,13 @@
 # Architecture
 
-Status: Draft · Partial · 2026-09-18 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
+Status: Draft · Built · 2026-09-19 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
 
 ## At a glance
 
 Gaugewire is one static binary with five subcommand groups. The domain (`quota`) knows nothing
 about files, processes or networks. Adapters surround it: a source adapter for Claude Code's
 status line, a store for state and spool, a renderer bridge, and sinks. The CLI wires them. A
-future source or sink touches only its own package. This layout is built except `sink/databox`.
+future source or sink touches only its own package. This layout is built.
 
 ## Diagram
 
@@ -46,7 +46,7 @@ internal/store/              home dir, atomic write, flock locks, state.json, pe
 internal/settings/           edit one member of Claude Code's settings file by byte offsets
 internal/renderer/           run the saved command with exact stdin, forward stdout
 internal/sink/               Sink interface, Flusher, per-sink delivery bookkeeping
-internal/sink/databox/       v1 client, dataset records, error classification, bootstrap calls
+internal/sink/databox/       v1 client, dataset records, error classification, the Sink
 internal/config/             config.json load, validate, save
 internal/cli/                one file per subcommand; status and doctor rendering
 fixtures/statusline/         real and synthetic stdin payloads for tests
@@ -81,7 +81,8 @@ sequenceDiagram
     F->>S: try flush.lock
     F->>D: POST History, POST Current
     D-->>F: accepted
-    F->>S: delete event, record ingestion ids
+    F->>S: delete event
+    F->>S: sink records lastIngestion under state.lock
     F->>S: unlock, exit
 ```
 

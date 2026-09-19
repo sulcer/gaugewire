@@ -1,6 +1,6 @@
 # CLI and install
 
-Status: Draft · Partial · 2026-09-18 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
+Status: Draft · Built · 2026-09-19 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
 
 ## At a glance
 
@@ -8,8 +8,7 @@ Status: Draft · Partial · 2026-09-18 · Every command, the install and uninsta
 Gaugewire, keeps everything else in the file byte for byte, saves the original object for an
 exact restore, and refuses to overwrite an existing install without `--force`. `uninstall`
 restores the original object only if the setting still points at Gaugewire. `status` is
-offline; `doctor` runs every offline check plus, once the Databox sink lands, its three sink
-checks.
+offline; `doctor` runs every offline check plus the sink rows of each enabled Databox sink.
 
 ## Commands
 
@@ -21,11 +20,11 @@ checks.
 | `gaugewire uninstall [--settings path] [--purge]` | Restore the status line; `--purge` also deletes the home directory. |
 | `gaugewire status` | Offline view of state and spool. |
 | `gaugewire doctor [--settings path]` | Full health check, exit 1 on any failing check. |
-| `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--test-ingest]` | See [databox-sink](databox-sink.md). |
+| `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--base-url url] [--sink-id id] [--test-ingest]` | See [databox-sink](databox-sink.md). |
 | `gaugewire version` | Version, commit, date from build info. |
 
-Built: every command except `databox bootstrap`. `doctor`'s sink auth, datasets and last
-ingestion rows arrive with the Databox sink.
+Built: every command. `doctor`'s sink rows run only when a Databox sink is enabled and are the
+only network calls doctor makes, each with a 15 s timeout.
 
 `flush -h` prints usage and exits 0. A retryable delivery failure makes `flush` exit 1, which is
 harmless for the detached run: a later status-line invocation relaunches it when work is still
@@ -164,10 +163,10 @@ Reads `state.json` and counts spool files. No network.
 | Home directory | exists, state readable, spool writable |
 | Quota windows | status of each window and age of the last observation |
 | `refreshInterval` | advice only when set |
-| Sink auth (with the Databox sink) | `GET /v1/auth/validate-key` |
-| Datasets (with the Databox sink) | both ids present in `GET /v1/data-sources/{id}/datasets` |
-| Last ingestion (with the Databox sink) | latest ingestion id per dataset polled; `failed` shown with its errors |
 | Spool | pending and dead-letter counts, the newest dead-letter reason, and the count of `.unreadable` files |
+| Sink auth (per enabled Databox sink) | `GET /v1/auth/validate-key` |
+| Datasets (per enabled Databox sink) | both ids present in `GET /v1/data-sources/{id}/datasets` |
+| Last ingestion (per enabled Databox sink) | latest ingestion id per dataset polled; rejected records fail the row |
 
 The overrides check reads `.claude/settings.local.json` before `.claude/settings.json` in the
 current directory, then the settings file, matching Claude Code's documented precedence
@@ -178,16 +177,28 @@ failure because the settings reference states it disables the status line
 also reads the repository root's `.claude/settings.local.json`. Without `--settings`, doctor
 checks the file `install` recorded in `config.json` and falls back to the user settings file.
 
+The three sink rows are appended once per enabled Databox sink, after the offline rows, which
+keep their own order. Each row fails independently: a key that cannot be resolved fails all
+three with the key error, since none of them can be answered without a client; an unconfigured
+data source or dataset id is reported as `not configured` without making a request; a recorded
+ingestion id the API no longer returns reads as a failure until the next flush records a new
+one. Worst case per enabled sink is four requests of up to 15 s each — one for sink auth, one
+for datasets, up to two for the last-ingestion row.
+
 Output is one line per check, `✓ name: detail` or `✗ name: detail`, a blank line, then `HEALTHY`
 or `UNHEALTHY`; exit code 1 on any ✗.
 
 ## Logging
 
-`log/slog` JSON lines to `logs/gaugewire.log`, rotated to `.1` at 1 MiB. Fields are limited to
-timestamps, event ids, parse success or failure with the failing field path, sink id, delivery
-status, attempt count, error code and observer version. Never logged: raw status-line JSON,
-session ids, paths, repositories, transcripts, prompts, credentials. Error reasons may name files
-inside the Gaugewire home directory; nothing outside it is ever logged.
+`log/slog` JSON lines to `logs/gaugewire.log`, rotated to `.1` at 1 MiB. Every line carries a
+timestamp and a short message. Structured fields are event ids and their event type, a rejected
+observation field's path, sink ids, delivery and flush outcome counts, retry attempt counts, a
+sink's classified error code, and a free-text reason or error string describing what a local
+operation failed on. Never logged: the raw status-line payload, `session_id`, `cwd`,
+`transcript_path`, `workspace` or any other field Claude Code reports beyond the four quota
+fields, repositories, transcripts, prompts, credentials. An error reason may name a local file —
+a spooled event, a configured key file — by its path; nothing about a Claude Code session ever
+reaches a log line.
 
 ## Home directory
 

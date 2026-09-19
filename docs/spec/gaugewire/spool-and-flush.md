@@ -1,6 +1,6 @@
 # Spool and flush
 
-Status: Draft · Built · 2026-09-18 · Local durability first, network second: the spool, the locks, the flusher, retries and dead letters.
+Status: Draft · Built · 2026-09-19 · Local durability first, network second: the spool, the locks, the flusher, retries and dead letters.
 
 ## At a glance
 
@@ -55,18 +55,24 @@ on `eventId` and tolerate this.
 3. A pending file that cannot be decoded is renamed to `dead-letter/<name>.unreadable` before
    delivery, so a corrupt file never blocks the others.
 4. For each enabled sink, take the events whose `delivery[sink].nextAttemptAt ≤ now`, in order,
-   in chunks of at most 100.
+   in chunks of at most 100, and hand the sink one `Delivery` per event — its event type plus
+   the snapshot.
 5. Success removes the sink from each event's `delivery`; a file with no sinks left is deleted.
 6. A retryable error bumps `attempts`, sets `nextAttemptAt = now + backoff(attempts)` with
    ±20 % jitter, rewrites the file and stops this sink for this run, so a newer event is never
    delivered before an older one.
 7. A permanent error moves the chunk's files to `dead-letter/` with the reason and continues.
-8. Record `lastFlush` in `state.json` under `state.lock`; `lastIngestion` arrives with the
-   Databox sink. Exit.
+8. Record `lastFlush` in `state.json` under `state.lock`. Exit.
 
-Backoff: 5 s, 30 s, 2 min, 10 min, then 30 min forever. Request timeout 15 s, whole run capped
-at 2 min. The flusher never sleeps until the next attempt; a later status-line invocation
-relaunches it when due work exists. With Claude idle, nothing retries, by design.
+The flusher itself never writes `lastIngestion`: the Databox sink records that entry under the
+same `state.lock`, keyed by its own sink id, once History has accepted the chunk and Current has
+too whenever its guard sent it a request (see [databox-sink](databox-sink.md)).
+
+Backoff: 5 s, 30 s, 2 min, 10 min, then 30 min forever. Request timeout 15 s; one `PublishBatch`
+call is bounded by `BatchTimeout`, three times the request timeout, since the Databox sink makes
+up to two requests per chunk (History, then Current); the whole run is still capped at 2 min.
+The flusher never sleeps until the next attempt; a later status-line invocation relaunches it
+when due work exists. With Claude idle, nothing retries, by design.
 
 ## Error classes
 

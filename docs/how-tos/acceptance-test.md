@@ -12,7 +12,7 @@ calling v1 complete. Record the results in the PR that flips the spec markers to
 ## 1. Source
 
 1. Note the current visible status line and the `statusLine` object in `~/.claude/settings.json`.
-2. `gaugewire install`, then `gaugewire databox bootstrap --api-key-file <path>`.
+2. `gaugewire install`, then `gaugewire databox bootstrap --api-key-file <path> --test-ingest`.
 3. Start Claude Code. Before the first model response, run `gaugewire status`: both windows
    must be `unknown`, never 0.
 4. Send one message. `gaugewire status` must show both windows `observed`. Compare with
@@ -39,14 +39,18 @@ change: still identical.
 ## 5. Databox
 
 Current contains exactly one row for the account. History contains unique, chronological
-events. Note how long a dashboard takes to reflect an ingestion and record it here:
+events. Run `gaugewire doctor` and confirm its three sink rows are healthy against the
+dashboard's own view of the same ingestions. Note how long a dashboard takes to reflect an
+ingestion and record it here:
 
 | Date | Ingestion accepted → visible on dashboard |
 |---|---|
 | | |
 
-Confirm the two assumptions from the [sink spec](../spec/gaugewire/databox-sink.md): whether
-the column schema was accepted at creation, and whether a 429 was seen and what it carried.
+Confirm the assumptions from the [sink spec](../spec/gaugewire/databox-sink.md): whether column
+types are inferred from the first ingestion so `*_at` columns show as datetimes; whether a
+throttling 429 carries the JSON envelope and what status codes other errors arrive with; whether
+an error ever arrives with a 2xx status; and whether any list response was paginated.
 
 ## 6. Uninstall
 

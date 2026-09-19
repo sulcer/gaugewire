@@ -1,6 +1,6 @@
 # Testing strategy
 
-Status: Draft · Partial · 2026-09-18 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
+Status: Draft · Partial · 2026-09-19 · What proves each package, how integration tests run, and what the acceptance test on a real machine must show.
 
 ## At a glance
 
@@ -20,13 +20,14 @@ real Databox service is touched only by the manual acceptance test.
 | `settings` | fixture-driven goldens for `Get`/`Set`/`Delete` on a top-level member at every position (`empty`, `none` — no such member, `only`, `first`, `middle`, `last`, `compact`), each proved byte-exact against a `testdata/*.golden` file; the `last` fixture's CRLF and tabs kept as binary via `.gitattributes` so a checkout never rewrites its line endings; round trips (`Set` then `Delete` restores a file with no member; `Set` back to the original value restores a file that had one); malformed JSON and a non-object top level rejected |
 | `renderer` | byte-for-byte stdin passthrough; stdout passthrough including ANSI; renderer failure does not fail the observer; observer failure does not blank the renderer |
 | `sink` | router fans out to enabled sinks only; per-sink delivery bookkeeping; a sink added later is not targeted by older events |
-| `sink/databox` (`httptest`) | happy path; 401; 429 with and without JSON body; 5xx; 400; missing `ingestionId`; chunking at 100; Current gets the newest; Current skipped when older than `currentCapturedAt`; bootstrap reuse by title and creation of only what is missing |
+| `sink/databox` | a scripted `httptest` fake server behind the client: happy path, 401, 429 with and without a JSON body, 5xx, 400, missing `ingestionId`, chunking at 100, redirects refused; a classification table over every documented HTTP status; History and Current record shapes proved against `testdata/*.golden`; the sink itself: History then Current, Current skipped when not strictly newer than `currentCapturedAt`, ingestion ids recorded, delivery still succeeds when the ingestion record cannot be loaded or saved |
 | `config` | load, validate, unknown sink type, duration parsing, credentials precedence |
-| `cli` | install and uninstall round-trip on a temp `settings.json` preserving unrelated bytes; refuse double install; warn on a modified status line; `status` and `doctor` golden output |
+| `cli` | install and uninstall round-trip on a temp `settings.json` preserving unrelated bytes; refuse double install; warn on a modified status line; `status` and `doctor` golden output; `runFlush` end to end against `httptest` delivers to Databox and clears the spool, dead-letters an invalid key without logging it, retries a rate limit, skips a sink with no key or no dataset ids; `databox bootstrap` creates everything on an empty account, reuses existing resources, needs `--account-id` with several accounts, records the key file path, sends the `--test-ingest` heartbeat |
 
-Built so far: the `quota`, `source/claude`, `store`, `settings`, `config`, `renderer`, `sink` and
-`cli` rows for the commands that exist; integration tests for the parallel hot path, the detached
-flusher, the install round trip and the doctor exit code.
+Built so far: the `quota`, `source/claude`, `store`, `settings`, `config`, `renderer`, `sink`,
+`sink/databox` and `cli` rows for every command that exists; integration tests for the parallel
+hot path, the detached flusher, the install round trip, the doctor exit code and a flush through
+the built binary against a fake API.
 
 Timing-dependent logic (backoff, heartbeat) uses `testing/synctest`. Tests use `t.Context()`,
 `t.TempDir()` and `t.Setenv()`. Golden files live in `testdata/` and are regenerated only with
@@ -44,10 +45,13 @@ the diff shown to a human.
   `doctor` reports healthy, and `uninstall` restores the file byte for byte.
 - `doctor` exits 1 against a `config.json` with no install record (the "status-line integration"
   check fails as `not installed`).
+- `gaugewire flush` through the built binary delivers to an `httptest` fake API and clears the
+  spool.
 
 Integration tests build the binary and prove that the detached flusher outlives the hot path,
 that eight parallel status-line invocations publish once, that install and uninstall round-trip a
-settings file, and that `doctor`'s exit code reflects its verdict.
+settings file, that `doctor`'s exit code reflects its verdict, and that a flush through the built
+binary reaches a fake Databox API.
 
 ## Coverage
 

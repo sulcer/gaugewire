@@ -1,6 +1,6 @@
 # Data contract
 
-Status: Draft · Partial · 2026-09-18 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
+Status: Draft · Partial · 2026-09-19 · Every persisted or transmitted shape: the snapshot, window status, event types, config, state and spooled events.
 
 ## At a glance
 
@@ -95,10 +95,13 @@ older or missing versions skip observation and `doctor` reports it.
 - `install.originalStatusLine` is kept as raw JSON so uninstall restores the same object; it is
   the original object JSON-equal to what install found, not its original source bytes, and it is
   omitted entirely (never `null`) when install found no `statusLine` to save. `install.settingsPath`
-  is always an absolute path. `install` is absent until `install` runs.
+  is always an absolute path. `install` is absent until `install` runs, and `uninstall` clears it;
+  `databox bootstrap` never touches it.
 - Durations are Go duration strings. Unknown sink `type` fails validation.
 - Credentials: `apiKeyFile` if set, else the environment variable named by `apiKeyEnv`
   (default `DATABOX_API_KEY`). The key never appears in config, state, events or logs.
+- `sinks[].baseUrl` is set by `gaugewire databox bootstrap`, which defaults it to the public API
+  host and overwrites it on every run; it exists so a test can point the sink at `httptest`.
 - Loading a file that decodes but fails validation returns the decoded value together with an
   `ErrInvalid` error, so the hot path can keep the renderer running; every other command treats
   it as fatal.
@@ -121,7 +124,9 @@ older or missing versions skip observation and `doctor` reports it.
 
 The hot path writes `windows`, `lastObservedAt`, `claudeCodeVersion` and `lastPublished` under
 `state.lock`. The flusher writes `lastFlush` under `state.lock`, held only around the
-read-modify-write, never around network calls; `lastIngestion` arrives with the Databox sink.
+read-modify-write, never around network calls. `lastIngestion` is written by the Databox sink
+itself, keyed by sink id, under the same lock, once the chunk's History request — and its
+Current request, when the guard sends one — has been accepted.
 
 ## Spooled event
 
