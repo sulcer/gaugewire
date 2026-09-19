@@ -2,7 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,25 +18,29 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/sulcer/gaugewire/internal/config"
+	"github.com/sulcer/gaugewire/internal/quota"
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
 type fakeDatabox struct {
-	mu      sync.Mutex
-	replies map[string][]string // "METHOD /path" -> bodies in order (last repeats), status 200
-	fail    map[string]int      // "METHOD /path" -> status for the error envelope
-	calls   []string
-	server  *httptest.Server
+	mu       sync.Mutex
+	replies  map[string][]string // "METHOD /path" -> bodies in order (last repeats), status 200
+	fail     map[string]int      // "METHOD /path" -> status for the error envelope
+	calls    []string
+	requests map[string][]string // "METHOD /path" -> request bodies in arrival order
+	server   *httptest.Server
 }
 
 func newFakeDatabox(t *testing.T) *fakeDatabox {
 	t.Helper()
-	f := &fakeDatabox{replies: map[string][]string{}, fail: map[string]int{}}
+	f := &fakeDatabox{replies: map[string][]string{}, fail: map[string]int{}, requests: map[string][]string{}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		key := r.Method + " " + r.URL.Path
 		f.calls = append(f.calls, key)
+		f.requests[key] = append(f.requests[key], string(raw))
 		w.Header().Set("Content-Type", "application/json")
 		if status, ok := f.fail[key]; ok {
 			w.WriteHeader(status)
@@ -72,6 +79,13 @@ func (f *fakeDatabox) seen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.calls...)
+}
+
+// bodies returns the request bodies sent to "METHOD /path", in arrival order.
+func (f *fakeDatabox) bodies(key string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.requests[key]...)
 }
 
 const (
@@ -253,6 +267,47 @@ func TestBootstrapRecordsTheKeyFilePath(t *testing.T) {
 	}
 }
 
+// observedHome is a fresh home whose state holds both windows observed, as it
+// is once Claude Code has shown its status line.
+func observedHome(t *testing.T) string {
+	t.Helper()
+	home := freshHome(t)
+	state := store.NewState()
+	used := 24.0
+	reset := time.Date(2026, 9, 19, 17, 0, 0, 0, time.UTC)
+	state.Windows = quota.Windows{
+		FiveHour: quota.Window{Status: quota.WindowObserved, UsedPercentage: &used, ResetsAt: &reset},
+		SevenDay: quota.Window{Status: quota.WindowObserved, UsedPercentage: &used, ResetsAt: &reset},
+	}
+	if err := store.SaveState(home, state); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	return home
+}
+
+// eventTypes lists the event_type of every record in the given ingestion bodies.
+func eventTypes(t *testing.T, bodies []string) []string {
+	t.Helper()
+	var types []string
+	for _, b := range bodies {
+		var payload struct {
+			Records []map[string]any `json:"records"`
+		}
+		if err := json.Unmarshal([]byte(b), &payload); err != nil {
+			t.Fatalf("decode %q: %v", b, err)
+		}
+		for _, r := range payload.Records {
+			types = append(types, fmt.Sprint(r["event_type"]))
+		}
+	}
+	return types
+}
+
+const reusedResources = "account:          Acme (123456)\n" +
+	"data source:      Gaugewire (4754489) reused\n" +
+	"history dataset:  ds-hist reused\n" +
+	"current dataset:  ds-cur reused\n"
+
 func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
@@ -265,9 +320,51 @@ func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 	opts := bootstrapOpts(f)
 	opts.testIngest = true
 	var stdout bytes.Buffer
+	err := bootstrap(t.Context(), observedHome(t), opts, &stdout, &bytes.Buffer{})
+	got := struct {
+		err     bool
+		out     string
+		history []string
+	}{err != nil, stdout.String(), eventTypes(t, f.bodies("POST /v1/datasets/ds-hist/data"))}
+	want := struct {
+		err     bool
+		out     string
+		history []string
+	}{false, reusedResources + "test ingest:      history ing-h, current ing-c\n", []string{"heartbeat"}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v1/accounts", oneAccount)
+	f.on("GET /v1/accounts/123456/data-sources", oneDataSource)
+	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	opts := bootstrapOpts(f)
+	opts.testIngest = true
+	var stdout bytes.Buffer
 	err := bootstrap(t.Context(), freshHome(t), opts, &stdout, &bytes.Buffer{})
-	if err != nil || !strings.HasSuffix(stdout.String(), "test ingest:      history ing-h, current ing-c\n") {
-		t.Fatalf("err=%v out=%q", err, stdout.String())
+	got := struct {
+		err   bool
+		out   string
+		calls []string
+	}{err != nil, stdout.String(), f.seen()}
+	want := struct {
+		err   bool
+		out   string
+		calls []string
+	}{
+		out: reusedResources + "test ingest:      skipped: no quota observation yet; run it again after Claude Code has shown its status line\n",
+		calls: []string{
+			"GET /v1/auth/validate-key", "GET /v1/accounts",
+			"GET /v1/accounts/123456/data-sources", "GET /v1/data-sources/4754489/datasets",
+		},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 

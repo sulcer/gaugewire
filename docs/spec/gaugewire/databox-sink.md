@@ -130,7 +130,7 @@ another host.
 `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--base-url url]
 [--sink-id id] [--test-ingest]` prints one line per resource as it resolves: `account:`,
 `data source:`, `history dataset:` and `current dataset:` (each `created` or `reused`), and,
-with `--test-ingest`, `test ingest:` with both ingestion ids.
+with `--test-ingest`, `test ingest:` with both ingestion ids, or why it was skipped.
 
 ```mermaid
 flowchart TD
@@ -146,7 +146,9 @@ flowchart TD
     G --> H[GET data-sources/id/datasets<br/>reuse by title, else POST with primaryKeys]
     H --> I[persist accountId, dataSourceId,<br/>currentDatasetId, historyDatasetId]
     I --> J{"--test-ingest?"}
-    J -->|yes| K[send one heartbeat event, print ingestion ids]
+    J -->|yes| O{"a quota window<br/>observed?"}
+    O -->|no| S[print skipped, exit 0]
+    O -->|yes| K[send one heartbeat event, read the<br/>record back, print ingestion ids]
     J -->|no| L[done]
 ```
 
@@ -160,9 +162,15 @@ different real host. A data source is reused by title whether or not it reports
 When several accounts are reachable and `--account-id` is not given, the error names no
 accounts — the operator is expected to already know the id.
 
-`--test-ingest` sends one heartbeat snapshot after bootstrapping and fails the command if the
-ingestion record cannot be read back from `state.json` after the API accepted it, since an
-unrecorded ingestion would otherwise look like a working sink. A key-file permission warning
+`--test-ingest` sends one heartbeat snapshot after bootstrapping, but only once `state.json`
+holds an observed quota window: before Claude Code has shown its status line the heartbeat would
+carry nothing but nulls, so the command prints `test ingest:      skipped: no quota observation
+yet; run it again after Claude Code has shown its status line` and succeeds without a request.
+It fails if the ingestion record read back from `state.json` after the API accepted the
+heartbeat is missing or does not carry this send's time, since an unrecorded ingestion, or a
+record an earlier run left behind, would otherwise look like a working sink. So run bootstrap
+at setup, and `gaugewire databox bootstrap --test-ingest` again after the first observation;
+bootstrap is idempotent, so the second run creates nothing. A key-file permission warning
 from bootstrap goes to stderr, not only to the log.
 
 ## Open questions

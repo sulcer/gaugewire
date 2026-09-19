@@ -12,11 +12,14 @@ calling v1 complete. Record the results in the PR that flips the spec markers to
 ## 1. Source
 
 1. Note the current visible status line and the `statusLine` object in `~/.claude/settings.json`.
-2. `gaugewire install`, then `gaugewire databox bootstrap --api-key-file <path> --test-ingest`.
+2. `gaugewire install`, then `gaugewire databox bootstrap --api-key-file <path>`.
 3. Start Claude Code. Before the first model response, run `gaugewire status`: both windows
    must be `unknown`, never 0.
 4. Send one message. `gaugewire status` must show both windows `observed`. Compare with
    `/usage`: same percentages, same reset times.
+5. `gaugewire databox bootstrap --test-ingest`. Bootstrap is idempotent: every resource line
+   reads `reused`, nothing is created, and `test ingest:` prints both ingestion ids. Run before
+   step 4, it prints `skipped` instead, because there is no observation to send yet.
 
 ## 2. Existing status line
 

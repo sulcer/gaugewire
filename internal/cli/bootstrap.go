@@ -225,22 +225,30 @@ func createdOrReused(created bool) string {
 }
 
 // sendTestHeartbeat sends one heartbeat built from the current state and prints
-// the ingestion ids, so the dashboard shows a row before Claude Code runs. The
-// ids are read back from state.json: an ingestion the sink could not record is
-// reported as a failure, because the next flush would resend it.
+// the ingestion ids, so the dashboard shows a row before the next quota change.
+// Without an observed window the heartbeat would be all nulls, so it is skipped
+// until Claude Code has shown its status line. The ids are read back from
+// state.json and must carry this send's time: an ingestion the sink could not
+// record, or a record left by an earlier run, is reported as a failure, because
+// the next flush would resend it.
 func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entry config.Sink, client *databox.Client, opts bootstrapOptions, stdout io.Writer) error {
 	state, err := store.LoadState(home)
 	if err != nil && !errors.Is(err, store.ErrStateCorrupt) {
 		return err
 	}
+	if state.Windows.FiveHour.Status != quota.WindowObserved && state.Windows.SevenDay.Status != quota.WindowObserved {
+		fmt.Fprintln(stdout, "test ingest:      skipped: no quota observation yet; run it again after Claude Code has shown its status line")
+		return nil
+	}
 	logger, closeLog := openLogger(home)
 	defer closeLog()
+	sentAt := opts.now().UTC()
 	ingestions := sink.StateIngestions{Home: home}
-	s, err := databox.New(entry.ID, client, databox.Datasets{History: entry.HistoryDatasetID, Current: entry.CurrentDatasetID}, ingestions, opts.now, logger)
+	s, err := databox.New(entry.ID, client, databox.Datasets{History: entry.HistoryDatasetID, Current: entry.CurrentDatasetID}, ingestions, func() time.Time { return sentAt }, logger)
 	if err != nil {
 		return err
 	}
-	snapshot := quota.NewSnapshot(cfg.QuotaIdentity(runtime.GOOS, opts.info.Version), state.State, uuid.NewV4().String(), opts.now())
+	snapshot := quota.NewSnapshot(cfg.QuotaIdentity(runtime.GOOS, opts.info.Version), state.State, uuid.NewV4().String(), sentAt)
 	if err = s.PublishBatch(ctx, []sink.Delivery{{EventType: quota.EventHeartbeat, Snapshot: snapshot}}); err != nil {
 		return fmt.Errorf("test ingest: %w", err)
 	}
@@ -248,7 +256,7 @@ func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entr
 	if err != nil {
 		return err
 	}
-	if !found {
+	if !found || !ing.At.Equal(sentAt) {
 		return errors.New("test ingest was accepted but the ingestion record could not be read back; check logs/gaugewire.log")
 	}
 	fmt.Fprintf(stdout, "test ingest:      history %s, current %s\n", ing.History, ing.Current)
