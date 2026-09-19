@@ -294,6 +294,52 @@ func TestInstallKeepsExistingIdentityAndAliasesOverride(t *testing.T) {
 	}
 }
 
+func TestInstallSetsTheGivenAccountIDInCanonicalForm(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	existing := testConfig()
+	if err := config.Save(home, existing); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	opts := installOpts(settingsPath)
+	opts.accountID = "5B3E2C1D-0A9F-4E8D-9C7B-6A5F4E3D2C1B"
+	err := install(home, opts, &bytes.Buffer{})
+	cfg, loadErr := config.Load(home)
+	type outcome struct {
+		err, loadErr                    bool
+		nodeID, accountID, accountAlias string
+	}
+	got := outcome{err != nil, loadErr != nil, cfg.Node.ID, cfg.Account.ID, cfg.Account.Alias}
+	want := outcome{false, false, existing.Node.ID, "5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b", existing.Account.Alias}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestInstallRefusesAnAccountIDThatIsNotAUUID(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"statusLine":{"type":"command","command":"cat"}}`
+	if err := os.WriteFile(settingsPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	opts := installOpts(settingsPath)
+	opts.accountID = "claude-01"
+	err := install(home, opts, &bytes.Buffer{})
+	_, loadErr := config.Load(home)
+	data, _ := os.ReadFile(settingsPath)
+	type outcome struct {
+		invalid, noConfig bool
+		settings          string
+	}
+	got := outcome{errors.Is(err, ErrInvalidAccountID), errors.Is(loadErr, config.ErrMissing), string(data)}
+	if want := (outcome{true, true, original}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
 func TestInstalledCommandQuotesOnlyPathsWithSpaces(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
@@ -319,15 +365,16 @@ func TestRunInstallUsesTheFlags(t *testing.T) {
 	}
 	settingsPath := filepath.Join(settingsDir, "settings.json")
 	var stdout bytes.Buffer
-	err = runInstall(t.Context(), []string{"--settings", settingsPath, "--node-alias", "n1", "--account-alias", "a1"}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	err = runInstall(t.Context(), []string{"--settings", settingsPath, "--node-alias", "n1", "--account-alias", "a1", "--account-id", "5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b"}, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
 	cfg, loadErr := config.Load(home)
 	type outcome struct {
 		err, loadErr       bool
 		nodeAlias, account string
+		accountID          string
 		settingsPath       string
 	}
-	got := outcome{err != nil, loadErr != nil, cfg.Node.Alias, cfg.Account.Alias, cfg.Install.SettingsPath}
-	want := outcome{false, false, "n1", "a1", settingsPath}
+	got := outcome{err != nil, loadErr != nil, cfg.Node.Alias, cfg.Account.Alias, cfg.Account.ID, cfg.Install.SettingsPath}
+	want := outcome{false, false, "n1", "a1", "5b3e2c1d-0a9f-4e8d-9c7b-6a5f4e3d2c1b", settingsPath}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}

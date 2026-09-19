@@ -16,7 +16,7 @@ offline; `doctor` runs every offline check plus the sink rows of each enabled Da
 |---|---|
 | `gaugewire statusline` | The [hot path](hot-path.md). Only Claude Code invokes it. |
 | `gaugewire flush [--requeue]` | One [flusher run](spool-and-flush.md). `--requeue` first moves dead letters back to pending. |
-| `gaugewire install [--settings path] [--node-alias a] [--account-alias b] [--force]` | See below. |
+| `gaugewire install [--settings path] [--node-alias a] [--account-alias b] [--account-id uuid] [--force]` | See below. |
 | `gaugewire uninstall [--settings path] [--purge]` | Restore the status line; `--purge` also deletes the home directory. |
 | `gaugewire status` | Offline view of state and spool. |
 | `gaugewire doctor [--settings path]` | Full health check, exit 1 on any failing check. |
@@ -53,7 +53,11 @@ flowchart TD
     L --> M[print what changed]
 ```
 
-Rules: aliases default to the hostname and `claude-01`; `padding`, `refreshInterval`,
+Rules: aliases default to the hostname and `claude-01`; `--account-id` must be a UUID, is
+stored in canonical lowercase and overrides the saved id, so every machine on one subscription
+can share the id the first install printed
+([ADR](../../adr/2026-09-19-one-account-id-per-subscription.md)); without it install keeps the
+saved id or generates one; `padding`, `refreshInterval`,
 `hideVimModeIndicator` and unknown keys are kept; `type: "command"` is added whenever the object
 has no `type`, and an absent `statusLine` or an object with no members becomes a fresh
 `{"type":"command","command":…}`; the binary path comes from `os.Executable()` and uses forward
