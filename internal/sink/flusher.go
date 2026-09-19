@@ -42,6 +42,10 @@ type Flusher struct {
 	Random  func() float64
 	Logger  *slog.Logger
 	Requeue bool
+	// SetupErr is a configuration problem found before the run, such as a sink
+	// that could not be built; it fails the run so lastFlush and the exit code
+	// show it.
+	SetupErr error
 }
 
 // Run performs one pass and exits. It never sleeps until the next attempt; a
@@ -88,6 +92,7 @@ func (f Flusher) Run(ctx context.Context) (Result, error) {
 			runErr = errors.Join(runErr, err)
 		}
 	}
+	runErr = errors.Join(f.SetupErr, runErr)
 	f.recordFlush(ctx, now, runErr)
 	f.Logger.Info("flush finished", "delivered", res.Delivered, "retried", res.Retried, "deadLettered", res.DeadLettered, "quarantined", res.Quarantined)
 	return res, runErr

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,10 +23,11 @@ func newDataboxClient(s config.Sink, key string, httpClient *http.Client) (*data
 }
 
 // buildSinks turns the enabled sink configurations into sinks. A sink that
-// cannot be built is logged with the reason and skipped; its events stay
-// spooled until the next run.
-func buildSinks(cfg config.Config, home string, logger *slog.Logger) []sink.Sink {
+// cannot be built is logged with the reason and left out, and the reasons are
+// returned joined so the flusher can fail the run; its events stay spooled.
+func buildSinks(cfg config.Config, home string, logger *slog.Logger) ([]sink.Sink, error) {
 	sinks := make([]sink.Sink, 0, len(cfg.Sinks))
+	var errs []error
 	for _, s := range cfg.Sinks {
 		if !s.Enabled {
 			continue
@@ -33,11 +35,12 @@ func buildSinks(cfg config.Config, home string, logger *slog.Logger) []sink.Sink
 		built, err := buildDataboxSink(s, home, logger)
 		if err != nil {
 			logger.Warn("sink not built", "sink", s.ID, "reason", err.Error())
+			errs = append(errs, fmt.Errorf("sink %s not built: %w", s.ID, err))
 			continue
 		}
 		sinks = append(sinks, built)
 	}
-	return sinks
+	return sinks, errors.Join(errs...)
 }
 
 // buildDataboxSink assembles one Databox sink. config.Validate already rejects

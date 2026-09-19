@@ -28,7 +28,8 @@ only network calls doctor makes, each with a 15 s timeout.
 
 `flush -h` prints usage and exits 0. A retryable delivery failure makes `flush` exit 1, which is
 harmless for the detached run: a later status-line invocation relaunches it when work is still
-due.
+due. An enabled sink that cannot be built (no API key, no dataset ids) fails the run too, so
+`flush` exits 1 and `lastFlush` records the reason.
 
 ## Install
 
@@ -140,7 +141,9 @@ Dead letters:      0
 databox-main:      last flush ok 2m ago
 ```
 
-One line per enabled sink, keyed by its id. When `state.json` cannot be decoded, the first output
+One line per enabled sink, keyed by its id. An enabled sink that cannot be built (no API key, no
+dataset ids) fails the flush, so its line reads `last flush failed <age>: sink <id> not built:
+<reason>` and its events stay pending. When `state.json` cannot be decoded, the first output
 line is `state.json is not valid; showing a fresh state` and the view shows a fresh state. The
 `Dead letters` line above shows `0` because the example has none; whenever there is at least one,
 it grows a ` · newest: <reason>` suffix naming the newest dead letter's reason. When

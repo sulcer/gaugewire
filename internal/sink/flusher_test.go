@@ -314,3 +314,19 @@ func TestRunRequeuesDeadLettersUnderTheLock(t *testing.T) {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestRunRecordsASetupErrorAsAFailedFlush(t *testing.T) {
+	t.Parallel()
+	home := flusherHome(t)
+	f := Flusher{Home: home, SetupErr: errors.New("sink x not built: no key"), Now: func() time.Time { return now }, Random: func() float64 { return 0.5 }, Logger: logging.Discard()}
+	res, err := f.Run(t.Context())
+	got := snapshotSpool(t, home, res, err)
+	want := spoolState{
+		runErr:    true,
+		pending:   map[string]map[string]store.DeliveryState{},
+		lastFlush: &store.FlushRecord{At: now, OK: false, Error: "sink x not built: no key"},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spoolState{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}

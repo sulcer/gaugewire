@@ -22,7 +22,7 @@ flowchart TD
     U -->|no| Q["rename to dead-letter/&lt;name&gt;.unreadable"] --> K
     U -->|yes| K
     K{next enabled sink}
-    K -->|none left| W["write lastFlush<br/>under state.lock"] --> X
+    K -->|none left| W["write lastFlush under state.lock,<br/>failed if a sink could not be built"] --> X
     K --> D["due events for this sink,<br/>chunks of at most 100"]
     D --> P[sink.PublishBatch]
     P -->|ok| A["remove sink from delivery,<br/>delete file when empty"] --> D
@@ -63,6 +63,11 @@ on `eventId` and tolerate this.
    delivered before an older one.
 7. A permanent error moves the chunk's files to `dead-letter/` with the reason and continues.
 8. Record `lastFlush` in `state.json` under `state.lock`. Exit.
+
+An enabled sink that cannot be built — no API key, no dataset ids — takes no part in the run
+and fails it, whether or not any event was due: `lastFlush` records `ok: false` with
+`sink <id> not built: <reason>`, `flush` exits 1, `status` shows `last flush failed`, and the
+events that target the sink stay pending until the configuration is fixed.
 
 The flusher itself never writes `lastIngestion`: the Databox sink records that entry under the
 same `state.lock`, keyed by its own sink id, once History has accepted the chunk and Current has

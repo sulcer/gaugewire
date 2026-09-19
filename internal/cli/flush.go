@@ -37,7 +37,8 @@ func runFlush(ctx context.Context, args []string, _ BuildInfo, streams IO) error
 	if err != nil {
 		return err
 	}
-	flusher := sink.Flusher{Home: home, Sinks: buildSinks(cfg, home, logger), Now: time.Now, Random: rand.Float64, Logger: logger, Requeue: *requeue} //nolint:gosec // G404: jitter, not security
+	sinks, setupErr := buildSinks(cfg, home, logger)
+	flusher := sink.Flusher{Home: home, Sinks: sinks, SetupErr: setupErr, Now: time.Now, Random: rand.Float64, Logger: logger, Requeue: *requeue} //nolint:gosec // G404: jitter, not security
 	res, runErr := flusher.Run(ctx)
 	if res.Skipped {
 		fmt.Fprintln(streams.Stdout, "skipped: another flusher is running")

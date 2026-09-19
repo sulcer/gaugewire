@@ -146,34 +146,23 @@ func TestFlushRetriesOnRateLimit(t *testing.T) {
 	}
 }
 
-func TestFlushSkipsASinkWithoutAKey(t *testing.T) {
+func TestFlushFailsWhenASinkHasNoKey(t *testing.T) {
 	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
 	home := databoxHome(t, srv.URL)
 	t.Setenv("GW_TEST_DATABOX_KEY", "")
 	var stdout bytes.Buffer
 	err := runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
-	pending, dead, _ := store.Counts(home)
-	log, _ := os.ReadFile(filepath.Join(home, store.LogsDir, logging.FileName))
-	got := struct {
-		err      bool
-		pending  int
-		dead     int
-		requests int64
-		reported bool
-	}{err != nil, pending, dead, requests.Load(), strings.Contains(string(log), "sink not built") && strings.Contains(string(log), ErrNoAPIKey.Error())}
-	want := struct {
-		err      bool
-		pending  int
-		dead     int
-		requests int64
-		reported bool
-	}{false, 1, 0, 0, true}
+	got := sinkSetupOutcome(t, home, err, requests.Load())
+	want := sinkSetupFailure{
+		err: true, pending: 1, reported: true,
+		lastFlushOK: false, lastFlushError: "sink databox-main not built: no Databox API key: set credentials.apiKeyFile or the environment variable",
+	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
-func TestFlushSkipsASinkWithoutDatasetIDs(t *testing.T) {
+func TestFlushFailsWhenASinkHasNoDatasetIDs(t *testing.T) {
 	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
 	home := databoxHome(t, srv.URL)
 	cfg, _ := config.Load(home)
@@ -183,23 +172,37 @@ func TestFlushSkipsASinkWithoutDatasetIDs(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	err := runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
-	pending, dead, _ := store.Counts(home)
-	log, _ := os.ReadFile(filepath.Join(home, store.LogsDir, logging.FileName))
-	got := struct {
-		err      bool
-		pending  int
-		dead     int
-		requests int64
-		reported bool
-	}{err != nil, pending, dead, requests.Load(), strings.Contains(string(log), "sink not built") && strings.Contains(string(log), "both dataset ids are required")}
-	want := struct {
-		err      bool
-		pending  int
-		dead     int
-		requests int64
-		reported bool
-	}{false, 1, 0, 0, true}
+	got := sinkSetupOutcome(t, home, err, requests.Load())
+	want := sinkSetupFailure{
+		err: true, pending: 1, reported: true,
+		lastFlushOK: false, lastFlushError: "sink databox-main not built: both dataset ids are required; run gaugewire databox bootstrap",
+	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
+}
+
+// sinkSetupFailure is what a flush leaves behind when a configured sink
+// could not be built: the run fails, the event stays pending, nothing is sent.
+type sinkSetupFailure struct {
+	err            bool
+	pending        int
+	dead           int
+	requests       int64
+	reported       bool
+	lastFlushOK    bool
+	lastFlushError string
+}
+
+func sinkSetupOutcome(t *testing.T, home string, err error, requests int64) sinkSetupFailure {
+	t.Helper()
+	pending, dead, _ := store.Counts(home)
+	log, _ := os.ReadFile(filepath.Join(home, store.LogsDir, logging.FileName))
+	state, _ := store.LoadState(home)
+	out := sinkSetupFailure{err: err != nil, pending: pending, dead: dead, requests: requests, reported: strings.Contains(string(log), "sink not built")}
+	if state.LastFlush != nil {
+		out.lastFlushOK = state.LastFlush.OK
+		out.lastFlushError = state.LastFlush.Error
+	}
+	return out
 }
