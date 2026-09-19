@@ -19,13 +19,17 @@ func TestLockSerialisesWriters(t *testing.T) {
 		t.Fatalf("seed counter: %v", err)
 	}
 	const writers = 20
+	// The wait is generous on purpose: waiters poll, so on a loaded runner one
+	// can lose the race for seconds. This test proves that no update is lost,
+	// not how fast the lock is handed over.
+	const wait = 30 * time.Second
 	var wg sync.WaitGroup
 	errs := make(chan error, writers)
 	for range writers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			unlock, err := Lock(t.Context(), lockPath, 5*time.Second)
+			unlock, err := Lock(t.Context(), lockPath, wait)
 			if err != nil {
 				errs <- err
 				return
