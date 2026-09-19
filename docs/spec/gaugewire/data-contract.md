@@ -91,6 +91,8 @@ older or missing versions skip observation and `doctor` reports it.
 }
 ```
 
+- `account.id` is shared by every machine on one Claude subscription; `install --account-id`
+  sets it in canonical lowercase, otherwise install keeps the saved id or generates one.
 - An empty or absent `renderer.command` means no renderer: Gaugewire prints nothing.
 - `install.originalStatusLine` is kept as raw JSON so uninstall restores the same object; it is
   the original object JSON-equal to what install found, not its original source bytes, and it is

@@ -69,6 +69,10 @@ last_seen_at, five_hour_status, five_hour_used_percentage, five_hour_resets_at,
 seven_day_status, seven_day_used_percentage, seven_day_resets_at, claude_code_version,
 observer_version`.
 
+One row per subscription holds when every machine on the subscription shares its account id
+(`install --account-id`). Across machines the last writer wins, because each machine's
+`currentCapturedAt` guard knows only its own deliveries; History keeps every event.
+
 Every column is present in every record, `null` when unknown. Timestamps are RFC 3339 UTC with
 millisecond precision; percentages are JSON numbers. `published_at` and `last_seen_at` are set
 by the flusher at send time. Column types are not declared at creation; if they are instead

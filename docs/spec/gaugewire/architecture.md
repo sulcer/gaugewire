@@ -100,6 +100,13 @@ Identity is configured, never inferred:
 "account": { "id": "configured-uuid", "alias": "claude-01" }
 ```
 
+Several machines logged into the same subscription share one account id. The first install
+generates it and prints it on its account line; every other machine passes it with
+`gaugewire install --account-id <uuid>`, and an installed machine joins with `--force` added.
+Across machines the last writer wins on the Current dataset, because each machine's
+`currentCapturedAt` guard knows only its own deliveries; History keeps every event with its
+`node_id`. Decision: [ADR](../../adr/2026-09-19-one-account-id-per-subscription.md).
+
 If the account logged into a machine changes, the operator re-binds the account identity.
 Gaugewire never claims to have verified the account.
 
