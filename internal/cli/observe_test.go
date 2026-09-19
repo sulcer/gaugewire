@@ -33,7 +33,7 @@ func testConfig(sinks ...config.Sink) config.Config {
 }
 
 func databoxSink() config.Sink {
-	return config.Sink{ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true}
+	return config.Sink{ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, BaseURL: "http://127.0.0.1:1"}
 }
 
 type observed struct {

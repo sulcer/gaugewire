@@ -67,8 +67,22 @@ func TestBinaryExitsTwoOnUsageError(t *testing.T) {
 }
 
 // databoxSinks is the one enabled sink the end-to-end test configures; a test
-// that must not spawn a flusher passes "[]" instead.
-const databoxSinks = `[ { "id": "databox-main", "type": "databox", "enabled": true, "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" } } ]`
+// that must not spawn a flusher passes "[]" instead. Its base URL is a
+// loopback port nothing listens on, so no request can leave the machine.
+const databoxSinks = `[ { "id": "databox-main", "type": "databox", "enabled": true, "baseUrl": "http://127.0.0.1:1", "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" } } ]`
+
+// childEnv is the test process environment without any DATABOX_API_KEY, plus
+// extra, so a key in the developer's shell never reaches a child process.
+func childEnv(extra ...string) []string {
+	parent := os.Environ()
+	env := make([]string, 0, len(parent)+len(extra))
+	for _, kv := range parent {
+		if !strings.HasPrefix(kv, "DATABOX_API_KEY=") {
+			env = append(env, kv)
+		}
+	}
+	return append(env, extra...)
+}
 
 func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 	t.Helper()
@@ -90,7 +104,7 @@ func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 func statuslineOnce(t *testing.T, binary, home string, payload []byte) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, "statusline")
-	cmd.Env = append(os.Environ(), "GAUGEWIRE_HOME="+home)
+	cmd.Env = childEnv("GAUGEWIRE_HOME=" + home)
 	cmd.Stdin = bytes.NewReader(payload)
 	out, err := cmd.Output()
 	return string(out), err
@@ -140,7 +154,7 @@ func waitForFlushRuns(t *testing.T, home string, want int) {
 func gaugewire(t *testing.T, binary, home string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, args...)
-	cmd.Env = append(os.Environ(), "GAUGEWIRE_HOME="+home)
+	cmd.Env = childEnv("GAUGEWIRE_HOME=" + home)
 	out, err := cmd.Output()
 	return string(out), err
 }
@@ -261,7 +275,7 @@ func TestFlushThroughTheBinaryAgainstAFakeAPI(t *testing.T) {
 		t.Fatalf("fixture: %v", err)
 	}
 	cmd := exec.CommandContext(t.Context(), binary, "statusline")
-	cmd.Env = append(os.Environ(), "GAUGEWIRE_HOME="+home, "GW_IT_DATABOX_KEY=it-key")
+	cmd.Env = childEnv("GAUGEWIRE_HOME="+home, "GW_IT_DATABOX_KEY=it-key")
 	cmd.Stdin = bytes.NewReader(payload)
 	if _, err := cmd.Output(); err != nil {
 		t.Fatalf("statusline: %v", err)
