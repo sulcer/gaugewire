@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -165,6 +166,82 @@ func TestDoctorUnhealthy(t *testing.T) {
 	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return errors.New("exit 3: renderer: exit status 3") })
 	got := renderDoctor(diagnose(t.Context(), in))
 	if want := doctorGolden(t, "doctor_unhealthy.golden", home, workDir); got != want {
+		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+const (
+	historyIngestion = `{"requestId":"r","status":"success","ingestionId":"ing-h","timestamp":"x","metrics":{"ingestionMetrics":{"appendedRecordsCount":1,"receivedRecordsCount":1,"rejectedRecordsCount":0,"overwrittenRecordsCount":0}}}`
+	currentIngestion = `{"requestId":"r","status":"success","ingestionId":"ing-c","timestamp":"x","metrics":{"ingestionMetrics":{"appendedRecordsCount":0,"receivedRecordsCount":1,"rejectedRecordsCount":0,"overwrittenRecordsCount":1}}}`
+)
+
+// doctorSinkFixture is the healthy fixture plus one enabled sink pointing at f
+// and the ingestion record a flush would have left behind.
+func doctorSinkFixture(t *testing.T, f *fakeDatabox) (home, settingsPath, workDir string) {
+	t.Helper()
+	home, settingsPath = doctorHealthyFixture(t)
+	workDir = t.TempDir()
+	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	f.on("GET /v1/datasets/ds-hist/ingestions/ing-h", historyIngestion)
+	f.on("GET /v1/datasets/ds-cur/ingestions/ing-c", currentIngestion)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks = []config.Sink{{
+		ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, BaseURL: f.server.URL,
+		AccountID: 123456, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+		Credentials: config.Credentials{APIKeyEnv: "GW_DOCTOR_KEY"},
+	}}
+	if saveErr := config.Save(home, cfg); saveErr != nil {
+		t.Fatalf("save: %v", saveErr)
+	}
+	state, err := store.LoadState(home)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	captured := doctorNow.Add(-2 * time.Minute)
+	state.LastIngestion = map[string]store.IngestionRecord{
+		"databox-main": {Current: "ing-c", History: "ing-h", CurrentCapturedAt: &captured, At: doctorNow.Add(-time.Minute)},
+	}
+	if saveErr := store.SaveState(home, state); saveErr != nil {
+		t.Fatalf("save state: %v", saveErr)
+	}
+	return home, settingsPath, workDir
+}
+
+// doctorSinkIn is the input diagnose gets for a fixture built by doctorSinkFixture.
+func doctorSinkIn(t *testing.T, f *fakeDatabox, home, settingsPath, workDir string) doctorInput {
+	t.Helper()
+	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return nil })
+	in.httpClient = f.server.Client()
+	in.getenv = func(string) string { return "doctor-key" }
+	return in
+}
+
+func TestDoctorChecksTheSinkWhenEnabled(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v1/auth/validate-key", validKey)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
+	if want := doctorGolden(t, "doctor_sink.golden", home, workDir); got != want {
+		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestDoctorReportsAnInvalidSinkKey(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.failWith("GET /v1/auth/validate-key", http.StatusUnauthorized)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
+	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
+	want = strings.Replace(want,
+		"✓ sink auth (databox-main): key valid",
+		"✗ sink auth (databox-main): permanent (invalid_api_key): databox: HTTP 401 invalid_api_key: bad (request r)", 1)
+	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
+	if got != want {
 		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
 	}
 }

@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 	"uuid"
 
 	"github.com/sulcer/gaugewire/internal/config"
 	"github.com/sulcer/gaugewire/internal/settings"
+	"github.com/sulcer/gaugewire/internal/sink/databox"
 	"github.com/sulcer/gaugewire/internal/source/claude"
 	"github.com/sulcer/gaugewire/internal/store"
 )
@@ -174,4 +176,103 @@ func checkSpool(home string) check {
 		detail += ", " + strconv.Itoa(unreadable) + " unreadable"
 	}
 	return check{name: "spool", ok: true, detail: detail}
+}
+
+// checkSink is the three rows one enabled sink contributes. Every row calls the
+// API, each call bounded by the client's own request timeout. A key that cannot
+// be resolved fails all three: none of them can be answered without a client.
+func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.IngestionRecord) []check {
+	auth := "sink auth (" + s.ID + ")"
+	datasets := "datasets (" + s.ID + ")"
+	ingestion := "last ingestion (" + s.ID + ")"
+	client, err := sinkClient(in, s)
+	if err != nil {
+		return []check{
+			{name: auth, detail: err.Error()},
+			{name: datasets, detail: err.Error()},
+			{name: ingestion, detail: err.Error()},
+		}
+	}
+	return []check{
+		checkSinkAuth(ctx, client, auth),
+		checkSinkDatasets(ctx, client, s, datasets),
+		checkLastIngestion(ctx, client, s, rec, ingestion),
+	}
+}
+
+// sinkClient resolves the sink's key and builds its client. The key stays in
+// the client: it reaches no row, no error and no log line.
+func sinkClient(in doctorInput, s config.Sink) (*databox.Client, error) {
+	key, _, err := loadAPIKey(s.Credentials, in.getenv)
+	if err != nil {
+		return nil, fmt.Errorf("no API key: %w", err)
+	}
+	base := s.BaseURL
+	if base == "" {
+		base = databox.DefaultBaseURL
+	}
+	return databox.NewClient(base, key, in.httpClient)
+}
+
+func checkSinkAuth(ctx context.Context, client *databox.Client, name string) check {
+	if err := client.ValidateKey(ctx); err != nil {
+		return check{name: name, detail: err.Error()}
+	}
+	return check{name: name, ok: true, detail: "key valid"}
+}
+
+// checkSinkDatasets confirms the configured dataset ids still exist in the
+// data source; a dataset deleted in the product is why delivery starts failing.
+func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sink, name string) check {
+	list, err := client.Datasets(ctx, s.DataSourceID)
+	if err != nil {
+		return check{name: name, detail: err.Error()}
+	}
+	present := make(map[string]bool, len(list))
+	for _, d := range list {
+		present[d.ID] = true
+	}
+	var found, missing []string
+	for _, want := range []struct{ label, id string }{{"history", s.HistoryDatasetID}, {"current", s.CurrentDatasetID}} {
+		part := want.label + " " + want.id
+		if want.id != "" && present[want.id] {
+			found = append(found, part)
+			continue
+		}
+		missing = append(missing, part)
+	}
+	if len(missing) > 0 {
+		return check{name: name, detail: "missing: " + strings.Join(missing, ", ")}
+	}
+	return check{name: name, ok: true, detail: strings.Join(found, ", ")}
+}
+
+// checkLastIngestion re-reads what the sink last had accepted. An Ingestion's
+// Status mirrors the response envelope, which is "success" for anything the API
+// hands back, so whether the rows landed is decided by the rejected count.
+func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Sink, rec store.IngestionRecord, name string) check {
+	accepted := true
+	var parts []string
+	for _, want := range []struct{ label, dataset, ingestion string }{
+		{"history", s.HistoryDatasetID, rec.History},
+		{"current", s.CurrentDatasetID, rec.Current},
+	} {
+		if want.ingestion == "" {
+			continue
+		}
+		ing, err := client.Ingestion(ctx, want.dataset, want.ingestion)
+		if err != nil {
+			return check{name: name, detail: err.Error()}
+		}
+		part := want.label + " " + ing.Status
+		if ing.Metrics.Rejected > 0 {
+			accepted = false
+			part += fmt.Sprintf(" (%d rejected)", ing.Metrics.Rejected)
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return check{name: name, ok: true, detail: "none yet"}
+	}
+	return check{name: name, ok: accepted, detail: strings.Join(parts, ", ")}
 }

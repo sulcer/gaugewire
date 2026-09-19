@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -38,6 +39,11 @@ type doctorInput struct {
 	workDir      string
 	now          time.Time
 	runRenderer  func(ctx context.Context, command string) error
+
+	// httpClient is the client the sink rows call the API with; nil means the
+	// databox client's default. getenv resolves a sink's API key variable.
+	httpClient *http.Client
+	getenv     func(string) string
 
 	// cfg is the decoded config.json and cfgErr whatever loading it returned.
 	// Load returns the decoded value alongside ErrInvalid, so every row after
@@ -75,7 +81,7 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 	if err != nil {
 		return err
 	}
-	in := doctorInput{home: home, settingsPath: *settingsPath, workDir: workDir, now: time.Now(), runRenderer: runRendererSample, cfg: cfg, cfgErr: cfgErr}
+	in := doctorInput{home: home, settingsPath: *settingsPath, workDir: workDir, now: time.Now(), runRenderer: runRendererSample, getenv: os.Getenv, cfg: cfg, cfgErr: cfgErr}
 	checks := diagnose(ctx, in)
 	if _, err := io.WriteString(streams.Stdout, renderDoctor(checks)); err != nil {
 		return err
@@ -104,10 +110,11 @@ func runRendererSample(ctx context.Context, command string) error {
 	return renderer.Run(ctx, command, []byte(samplePayload), io.Discard, io.Discard)
 }
 
-// diagnose runs every offline check in display order.
+// diagnose runs every offline check in display order, then the rows that call
+// a sink. Only an enabled sink is reached, so a machine without one stays offline.
 func diagnose(ctx context.Context, in doctorInput) []check {
 	state, _ := store.LoadState(in.home)
-	return []check{
+	checks := []check{
 		checkConfiguration(in.cfgErr),
 		checkClaudeCodeVersion(state),
 		checkStatusLineIntegration(in.cfg, in),
@@ -119,6 +126,12 @@ func diagnose(ctx context.Context, in doctorInput) []check {
 		checkRefreshInterval(in),
 		checkSpool(in.home),
 	}
+	for _, s := range in.cfg.Sinks {
+		if s.Enabled {
+			checks = append(checks, checkSink(ctx, in, s, state.LastIngestion[s.ID])...)
+		}
+	}
+	return checks
 }
 
 func renderDoctor(checks []check) string {
