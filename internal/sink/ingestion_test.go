@@ -1,6 +1,9 @@
 package sink
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,6 +36,29 @@ func TestStateIngestionsRoundTrip(t *testing.T) {
 	want := outcome{false, true, [3]bool{}, ing, store.IngestionRecord{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &captured, At: at}}
 	if diff := cmp.Diff(want, o, cmp.AllowUnexported(outcome{})); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestLoadIngestionReportsACorruptStateFile(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("layout: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, store.StateFile), []byte("{not json"), 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	_, found, err := StateIngestions{Home: home}.LoadIngestion("databox-main")
+	got := struct {
+		found   bool
+		corrupt bool
+	}{found, errors.Is(err, store.ErrStateCorrupt)}
+	want := struct {
+		found   bool
+		corrupt bool
+	}{false, true}
+	if got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
 	}
 }
 

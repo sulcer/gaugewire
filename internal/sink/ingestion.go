@@ -31,8 +31,9 @@ type StateIngestions struct {
 
 const ingestionLockWait = time.Second
 
-// LoadIngestion returns the record for sinkID, if any. A corrupt state file
-// reads as no record.
+// LoadIngestion returns the record for sinkID, if any. A corrupt state file is
+// reported as an error, ErrStateCorrupt included: the fresh state it yields
+// holds no record, and the caller has to log the condition.
 func (s StateIngestions) LoadIngestion(sinkID string) (Ingestion, bool, error) {
 	unlock, err := store.Lock(context.Background(), filepath.Join(s.Home, store.StateLockFile), ingestionLockWait)
 	if err != nil {
@@ -40,7 +41,7 @@ func (s StateIngestions) LoadIngestion(sinkID string) (Ingestion, bool, error) {
 	}
 	defer func() { _ = unlock() }()
 	state, err := store.LoadState(s.Home)
-	if err != nil && !errors.Is(err, store.ErrStateCorrupt) {
+	if err != nil {
 		return Ingestion{}, false, err
 	}
 	rec, ok := state.LastIngestion[sinkID]
@@ -50,7 +51,8 @@ func (s StateIngestions) LoadIngestion(sinkID string) (Ingestion, bool, error) {
 	return Ingestion{Current: rec.Current, History: rec.History, CurrentCapturedAt: rec.CurrentCapturedAt, At: rec.At}, true, nil
 }
 
-// SaveIngestion merges the record into state.json without touching the rest.
+// SaveIngestion merges the record into state.json without touching the rest. A
+// corrupt state file is overwritten from a fresh state, as the hot path does.
 func (s StateIngestions) SaveIngestion(sinkID string, ing Ingestion) error {
 	unlock, err := store.Lock(context.Background(), filepath.Join(s.Home, store.StateLockFile), ingestionLockWait)
 	if err != nil {

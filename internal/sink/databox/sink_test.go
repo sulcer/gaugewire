@@ -15,16 +15,17 @@ import (
 
 // memIngestions is an in-memory IngestionStore.
 type memIngestions struct {
-	mu   sync.Mutex
-	recs map[string]sink.Ingestion
-	fail error
+	mu       sync.Mutex
+	recs     map[string]sink.Ingestion
+	failLoad error
+	failSave error
 }
 
 func (m *memIngestions) LoadIngestion(id string) (sink.Ingestion, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.fail != nil {
-		return sink.Ingestion{}, false, m.fail
+	if m.failLoad != nil {
+		return sink.Ingestion{}, false, m.failLoad
 	}
 	r, ok := m.recs[id]
 	return r, ok, nil
@@ -33,8 +34,8 @@ func (m *memIngestions) LoadIngestion(id string) (sink.Ingestion, bool, error) {
 func (m *memIngestions) SaveIngestion(id string, ing sink.Ingestion) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.fail != nil {
-		return m.fail
+	if m.failSave != nil {
+		return m.failSave
 	}
 	if m.recs == nil {
 		m.recs = map[string]sink.Ingestion{}
@@ -117,6 +118,28 @@ func TestPublishBatchSkipsCurrentWhenOlderThanRecorded(t *testing.T) {
 	}
 }
 
+func TestPublishBatchSkipsCurrentOnAnEqualCaptureTime(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h2","message":"ok"}`)
+	equal := capturedAt
+	ings := &memIngestions{recs: map[string]sink.Ingestion{"databox-main": {Current: "ing-c1", History: "ing-h1", CurrentCapturedAt: &equal, At: sendAt.Add(-time.Hour)}}}
+	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-same"))
+	got := struct {
+		err   bool
+		paths []string
+		rec   sink.Ingestion
+	}{err != nil, paths(f.seen()), ings.recs["databox-main"]}
+	want := struct {
+		err   bool
+		paths []string
+		rec   sink.Ingestion
+	}{false, []string{"POST /v1/datasets/ds-hist/data"}, sink.Ingestion{Current: "ing-c1", History: "ing-h2", CurrentCapturedAt: &equal, At: sendAt}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestPublishBatchReturnsTheClassifiedHistoryError(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
@@ -146,10 +169,42 @@ func TestPublishBatchStillSucceedsWhenTheRecordCannotBeSaved(t *testing.T) {
 	f := newFake(t)
 	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
 	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
-	ings := &memIngestions{fail: errors.New("lock timeout")}
+	ings := &memIngestions{failSave: errors.New("lock timeout")}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
-	if err != nil || len(f.seen()) != 2 {
-		t.Fatalf("err=%v calls=%d, want nil and both posts", err, len(f.seen()))
+	got := struct {
+		err   bool
+		paths []string
+		saved bool
+	}{err != nil, paths(f.seen()), len(ings.recs) > 0}
+	want := struct {
+		err   bool
+		paths []string
+		saved bool
+	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, false}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPublishBatchPostsCurrentWhenTheRecordCannotBeLoaded(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	ings := &memIngestions{failLoad: errors.New("state.json is not valid")}
+	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
+	got := struct {
+		err   bool
+		paths []string
+		rec   sink.Ingestion
+	}{err != nil, paths(f.seen()), ings.recs["databox-main"]}
+	want := struct {
+		err   bool
+		paths []string
+		rec   sink.Ingestion
+	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &capturedAt, At: sendAt}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 
