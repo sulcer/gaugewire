@@ -1,7 +1,9 @@
 package databox
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -21,7 +23,7 @@ type memIngestions struct {
 	failSave error
 }
 
-func (m *memIngestions) LoadIngestion(id string) (sink.Ingestion, bool, error) {
+func (m *memIngestions) LoadIngestion(_ context.Context, id string) (sink.Ingestion, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failLoad != nil {
@@ -31,7 +33,7 @@ func (m *memIngestions) LoadIngestion(id string) (sink.Ingestion, bool, error) {
 	return r, ok, nil
 }
 
-func (m *memIngestions) SaveIngestion(id string, ing sink.Ingestion) error {
+func (m *memIngestions) SaveIngestion(_ context.Context, id string, ing sink.Ingestion) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failSave != nil {
@@ -186,12 +188,12 @@ func TestPublishBatchStillSucceedsWhenTheRecordCannotBeSaved(t *testing.T) {
 	}
 }
 
-func TestPublishBatchPostsCurrentWhenTheRecordCannotBeLoaded(t *testing.T) {
+func TestPublishBatchPostsCurrentWhenTheRecordIsCorrupt(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
 	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
 	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
-	ings := &memIngestions{failLoad: errors.New("state.json is not valid")}
+	ings := &memIngestions{failLoad: fmt.Errorf("%w: state.json is not valid", sink.ErrIngestionRecordCorrupt)}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
 	got := struct {
 		err   bool
@@ -203,6 +205,52 @@ func TestPublishBatchPostsCurrentWhenTheRecordCannotBeLoaded(t *testing.T) {
 		paths []string
 		rec   sink.Ingestion
 	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &capturedAt, At: sendAt}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPublishBatchRetriesWhenTheRecordIsLocked(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	ings := &memIngestions{failLoad: sink.NewRetryable("state_lock", errors.New("lock wait timed out"))}
+	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
+	class, code := sink.Classify(err)
+	type outcome struct {
+		failed bool
+		class  sink.Class
+		code   string
+		calls  int
+		saved  bool
+	}
+	got := outcome{err != nil, class, code, len(f.seen()), len(ings.recs) > 0}
+	if want := (outcome{true, sink.Retryable, "state_lock", 0, false}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
+func TestPublishBatchReturnsTheCurrentErrorAndSavesNothing(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	f.on("POST", "/v1/datasets/ds-cur/data", 503, `{"requestId":"r","status":"error","errors":[{"code":null,"message":"unavailable","field":"","type":"server"}]}`)
+	ings := &memIngestions{}
+	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
+	class, code := sink.Classify(err)
+	got := struct {
+		failed bool
+		class  sink.Class
+		code   string
+		paths  []string
+		saved  bool
+	}{err != nil, class, code, paths(f.seen()), len(ings.recs) > 0}
+	want := struct {
+		failed bool
+		class  sink.Class
+		code   string
+		paths  []string
+		saved  bool
+	}{true, sink.Retryable, "server_error", []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, false}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}

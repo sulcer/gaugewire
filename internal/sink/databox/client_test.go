@@ -3,6 +3,7 @@ package databox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -212,8 +213,44 @@ func TestRedirectsAreNotFollowed(t *testing.T) {
 	f.onRedirect("GET", "/v1/auth/validate-key", 302, f.server.URL+"/elsewhere")
 	err := client(t, f).ValidateKey(t.Context())
 	class, code := sink.Classify(err)
-	if err == nil || class != sink.Retryable || code != "transport" || len(f.seen()) != 1 {
-		t.Fatalf("err=%v class=%v code=%q calls=%d; want a retryable transport error and one call", err, class, code, len(f.seen()))
+	type outcome struct {
+		failed bool
+		class  sink.Class
+		code   string
+		calls  int
+	}
+	got := outcome{err != nil, class, code, len(f.seen())}
+	if want := (outcome{true, sink.Permanent, "redirect", 1}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
+func TestNewClientRefusesPlainHTTPToARemoteHost(t *testing.T) {
+	t.Parallel()
+	_, errRemote := NewClient("http://api.example.test", testKey, nil)
+	_, errLoopback := NewClient("http://127.0.0.1:1", testKey, nil)
+	_, errLocalhost := NewClient("http://localhost:8080", testKey, nil)
+	type outcome struct {
+		remote              string
+		loopback, localhost bool
+	}
+	got := outcome{fmt.Sprint(errRemote), errLoopback == nil, errLocalhost == nil}
+	if want := (outcome{"databox: base URL must use https", true, true}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// TestIdsAreEscapedInThePath uses ids holding "?" and "#", which would end the
+// path early if they were pasted in unescaped.
+func TestIdsAreEscapedInThePath(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	c := client(t, f)
+	_, _ = c.Ingest(t.Context(), "ds?x", []map[string]any{{"event_id": "evt-1"}})
+	_, _ = c.Ingestion(t.Context(), "ds?x", "ing#1")
+	want := []string{"POST /v1/datasets/ds?x/data", "GET /v1/datasets/ds?x/ingestions/ing#1"}
+	if diff := cmp.Diff(want, paths(f.seen())); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
 

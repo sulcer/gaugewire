@@ -1,6 +1,7 @@
 package sink
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,12 +20,12 @@ func TestStateIngestionsRoundTrip(t *testing.T) {
 		t.Fatalf("layout: %v", err)
 	}
 	s := StateIngestions{Home: home}
-	_, foundBefore, errBefore := s.LoadIngestion("databox-main")
+	_, foundBefore, errBefore := s.LoadIngestion(t.Context(), "databox-main")
 	captured := time.Date(2026, 9, 17, 15, 30, 0, 0, time.UTC)
 	at := captured.Add(5 * time.Second)
 	ing := Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &captured, At: at}
-	errSave := s.SaveIngestion("databox-main", ing)
-	got, found, errAfter := s.LoadIngestion("databox-main")
+	errSave := s.SaveIngestion(t.Context(), "databox-main", ing)
+	got, found, errAfter := s.LoadIngestion(t.Context(), "databox-main")
 	state, _ := store.LoadState(home)
 	type outcome struct {
 		foundBefore, found bool
@@ -48,16 +49,41 @@ func TestLoadIngestionReportsACorruptStateFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, store.StateFile), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("write state: %v", err)
 	}
-	_, found, err := StateIngestions{Home: home}.LoadIngestion("databox-main")
-	got := struct {
-		found   bool
-		corrupt bool
-	}{found, errors.Is(err, store.ErrStateCorrupt)}
-	want := struct {
-		found   bool
-		corrupt bool
-	}{false, true}
-	if got != want {
+	_, found, err := StateIngestions{Home: home}.LoadIngestion(t.Context(), "databox-main")
+	type outcome struct {
+		found, recordCorrupt, stateCorrupt bool
+	}
+	got := outcome{found, errors.Is(err, ErrIngestionRecordCorrupt), errors.Is(err, store.ErrStateCorrupt)}
+	if want := (outcome{false, true, true}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
+// TestLoadIngestionReportsAHeldLockAsRetryable holds state.lock and passes a
+// context that is already cancelled, so the wait ends at once through the
+// caller's context rather than after the lock budget.
+func TestLoadIngestionReportsAHeldLockAsRetryable(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	if err := store.EnsureLayout(home); err != nil {
+		t.Fatalf("layout: %v", err)
+	}
+	unlock, held, err := store.TryLock(filepath.Join(home, store.StateLockFile))
+	if err != nil || !held {
+		t.Fatalf("hold lock: held=%v err=%v", held, err)
+	}
+	defer func() { _ = unlock() }()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, found, err := StateIngestions{Home: home}.LoadIngestion(ctx, "databox-main")
+	class, code := Classify(err)
+	type outcome struct {
+		failed, found bool
+		class         Class
+		code          string
+	}
+	got := outcome{err != nil, found, class, code}
+	if want := (outcome{true, false, Retryable, "state_lock"}); got != want {
 		t.Fatalf("got %+v err %v, want %+v", got, err, want)
 	}
 }
@@ -75,7 +101,7 @@ func TestSaveIngestionKeepsOtherSinksAndQuotaState(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 	s := StateIngestions{Home: home}
-	if err := s.SaveIngestion("databox-main", Ingestion{History: "ing-h", At: time.Date(2026, 9, 17, 15, 30, 5, 0, time.UTC)}); err != nil {
+	if err := s.SaveIngestion(t.Context(), "databox-main", Ingestion{History: "ing-h", At: time.Date(2026, 9, 17, 15, 30, 5, 0, time.UTC)}); err != nil {
 		t.Fatalf("SaveIngestion: %v", err)
 	}
 	after, _ := store.LoadState(home)

@@ -368,6 +368,54 @@ func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
 	}
 }
 
+func TestBootstrapRefusesACreatedResourceWithoutAnID(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		script  map[string]string
+		wantErr string
+	}{
+		{
+			name:    "data source",
+			script:  map[string]string{"GET /v1/accounts/123456/data-sources": noDataSources, "POST /v1/data-sources": validKey},
+			wantErr: "databox returned no id for the created data source",
+		},
+		{
+			name: "dataset",
+			script: map[string]string{
+				"GET /v1/accounts/123456/data-sources":  oneDataSource,
+				"GET /v1/data-sources/4754489/datasets": noDatasets,
+				"POST /v1/datasets":                     validKey,
+			},
+			wantErr: `databox returned no id for the created dataset "Claude Quota History"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFakeDatabox(t)
+			f.on("GET /v1/auth/validate-key", validKey)
+			f.on("GET /v1/accounts", oneAccount)
+			for key, body := range tc.script {
+				f.on(key, body)
+			}
+			home := freshHome(t)
+			err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
+			cfg, _ := config.Load(home)
+			got := struct {
+				err   string
+				sinks int
+			}{fmt.Sprint(err), len(cfg.Sinks)}
+			want := struct {
+				err   string
+				sinks int
+			}{tc.wantErr, 0}
+			if got != want {
+				t.Fatalf("got %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
 func TestRunDataboxRejectsMissingOrUnknownSubcommand(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

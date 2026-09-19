@@ -198,6 +198,9 @@ func ensureDataSource(ctx context.Context, client *databox.Client, accountID int
 	if err != nil {
 		return databox.DataSource{}, false, fmt.Errorf("create data source: %w", err)
 	}
+	if created.ID == 0 {
+		return databox.DataSource{}, false, errors.New("databox returned no id for the created data source")
+	}
 	return created, true, nil
 }
 
@@ -213,6 +216,9 @@ func ensureDataset(ctx context.Context, client *databox.Client, existing []datab
 	created, err := client.CreateDataset(ctx, dataSourceID, title, []string{primaryKey})
 	if err != nil {
 		return databox.Dataset{}, false, fmt.Errorf("create dataset %q: %w", title, err)
+	}
+	if created.ID == "" {
+		return databox.Dataset{}, false, fmt.Errorf("databox returned no id for the created dataset %q", title)
 	}
 	return created, true, nil
 }
@@ -252,7 +258,7 @@ func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entr
 	if err = s.PublishBatch(ctx, []sink.Delivery{{EventType: quota.EventHeartbeat, Snapshot: snapshot}}); err != nil {
 		return fmt.Errorf("test ingest: %w", err)
 	}
-	ing, found, err := ingestions.LoadIngestion(entry.ID)
+	ing, found, err := ingestions.LoadIngestion(ctx, entry.ID)
 	if err != nil {
 		return err
 	}

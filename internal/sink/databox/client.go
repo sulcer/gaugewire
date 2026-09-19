@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -23,6 +25,9 @@ const DefaultBaseURL = "https://api.databox.com"
 const MaxRecords = 100
 
 const maxBody = 1 << 20
+
+// errRedirect is what CheckRedirect returns; do reports it as permanent.
+var errRedirect = errors.New("databox: redirects are not followed")
 
 // Client calls the v1 endpoints Gaugewire needs. It never logs and never
 // includes the key in an error.
@@ -80,6 +85,12 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	if apiKey == "" {
 		return nil, errors.New("databox: API key is empty")
 	}
+	// The key travels in a header, so it only ever goes over TLS; plain http
+	// is left for a test server on this machine.
+	parsed, err := url.Parse(base)
+	if err != nil || !allowedScheme(parsed) {
+		return nil, errors.New("databox: base URL must use https")
+	}
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
@@ -87,9 +98,23 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	// the Location header names, so a redirect is a failed request instead.
 	copied := *httpClient
 	copied.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return errors.New("databox: redirects are not followed")
+		return errRedirect
 	}
 	return &Client{base: strings.TrimRight(base, "/"), key: apiKey, http: &copied}, nil
+}
+
+// allowedScheme accepts https anywhere and plain http only to this machine.
+func allowedScheme(u *url.URL) bool {
+	switch u.Scheme {
+	case "https":
+		return true
+	case "http":
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		return strings.EqualFold(host, "localhost") || ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
 }
 
 // ValidateKey confirms the key with GET /v1/auth/validate-key.
@@ -159,7 +184,7 @@ func (c *Client) Ingest(ctx context.Context, datasetID string, records []map[str
 	var out struct {
 		IngestionID string `json:"ingestionId"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/v1/datasets/"+datasetID+"/data", map[string]any{"records": records}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/v1/datasets/"+url.PathEscape(datasetID)+"/data", map[string]any{"records": records}, &out); err != nil {
 		return "", err
 	}
 	if out.IngestionID == "" {
@@ -178,7 +203,7 @@ func (c *Client) Ingestion(ctx context.Context, datasetID, ingestionID string) (
 			IngestionMetrics IngestionMetrics `json:"ingestionMetrics"`
 		} `json:"metrics"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/datasets/"+datasetID+"/ingestions/"+ingestionID, nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/v1/datasets/"+url.PathEscape(datasetID)+"/ingestions/"+url.PathEscape(ingestionID), nil, &out); err != nil {
 		return Ingestion{}, err
 	}
 	return Ingestion{ID: out.ID, Status: out.Status, Timestamp: out.Timestamp, Metrics: out.Metrics.IngestionMetrics}, nil
@@ -207,6 +232,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.http.Do(req)
+	if errors.Is(err, errRedirect) {
+		return sink.NewPermanent("redirect", fmt.Errorf("databox: %s %s: %w", method, path, err))
+	}
 	if err != nil {
 		return sink.NewRetryable("transport", fmt.Errorf("databox: %s %s: %w", method, path, err))
 	}
