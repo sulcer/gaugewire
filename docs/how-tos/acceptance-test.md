@@ -31,7 +31,16 @@ change: still identical.
 1. Open a second session and leave it idle. Work in the first until the five-hour percentage
    rises by more than the threshold.
 2. `gaugewire status` must show the higher value and never fall back to the idle session's value.
-3. History in Databox must be chronological and monotonic within the window. This confirms the
+3. With several sessions open, `gaugewire status` must agree with `/usage` while they tick:
+   each session reports the rate limits it last received, and a session that predates a
+   change of schedule carries a reset that no longer applies.
+4. Leave one session idle for more than five hours, then capture its payload: it must stop
+   carrying `rate_limits.five_hour`. That is what dates a payload, so record what you see.
+5. While working in a session, capture two payloads far enough apart that usage moved: both
+   windows must change together, since they vouch for each other, and the five-hour percentage
+   must never fall while the five-hour reset stays the same. That pair is the clock that orders
+   payloads, so record any fall.
+6. History in Databox must be chronological and monotonic within the window. This confirms the
    staleness guard's assumption.
 
 ## 4. Network failure

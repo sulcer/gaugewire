@@ -105,6 +105,23 @@ func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 	return home
 }
 
+// openPayload is the full fixture with its two reset timestamps moved ahead of
+// now, replaced byte for byte so the rest of the payload keeps its formatting:
+// the binary reads the real clock, and the reducer refuses a reading whose
+// window has ended.
+func openPayload(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	ahead := func(d time.Duration) []byte {
+		return []byte(strconv.FormatInt(time.Now().Add(d).Unix(), 10))
+	}
+	raw = bytes.ReplaceAll(raw, []byte("1789659600"), ahead(time.Hour))
+	return bytes.ReplaceAll(raw, []byte("1789714800"), ahead(25*time.Hour))
+}
+
 func statuslineOnce(t *testing.T, binary, home string, payload []byte) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, "statusline")
@@ -121,10 +138,7 @@ func TestStatuslineEndToEnd(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "")
 	home := integrationHome(t, "cat", databoxSinks)
-	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
-	if err != nil {
-		t.Fatalf("fixture: %v", err)
-	}
+	payload := openPayload(t)
 	out, err := statuslineOnce(t, binary, home, payload)
 	if err != nil || out != string(payload) {
 		t.Fatalf("stdout %q err %v; want the exact payload", out, err)
@@ -182,10 +196,7 @@ func TestInstallStatuslineUninstallRoundTrip(t *testing.T) {
 	if err != nil || !strings.Contains(string(installed), binary+" statusline") {
 		t.Fatalf("settings after install: %q err %v", installed, err)
 	}
-	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
-	if err != nil {
-		t.Fatalf("fixture: %v", err)
-	}
+	payload := openPayload(t)
 	out, err := statuslineOnce(t, binary, home, payload)
 	if err != nil || out != string(payload) {
 		t.Fatalf("statusline: %q err %v", out, err)
@@ -219,10 +230,7 @@ func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	// No sink is enabled, so nothing is spooled and no flusher is spawned: the
 	// test observes the state lock alone, with nothing left running at cleanup.
 	home := integrationHome(t, "", "[]")
-	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
-	if err != nil {
-		t.Fatalf("fixture: %v", err)
-	}
+	payload := openPayload(t)
 	const sessions = 8
 	var wg sync.WaitGroup
 	errs := make(chan error, sessions)
@@ -274,10 +282,7 @@ func TestFlushThroughTheBinaryAgainstAFakeAPI(t *testing.T) {
 	t.Cleanup(srv.Close)
 	sinks := `[{"id":"databox-main","type":"databox","enabled":true,"baseUrl":` + strconv.Quote(srv.URL) + `,"accountId":123456,"dataSourceId":4754489,"currentDatasetId":"ds-cur","historyDatasetId":"ds-hist","credentials":{"apiKeyEnv":"GW_IT_DATABOX_KEY","apiKeyFile":""}}]`
 	home := integrationHome(t, "", sinks)
-	payload, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
-	if err != nil {
-		t.Fatalf("fixture: %v", err)
-	}
+	payload := openPayload(t)
 	cmd := exec.CommandContext(t.Context(), binary, "statusline")
 	cmd.Env = childEnv("GAUGEWIRE_HOME="+home, "GW_IT_DATABOX_KEY=it-key")
 	cmd.Stdin = bytes.NewReader(payload)

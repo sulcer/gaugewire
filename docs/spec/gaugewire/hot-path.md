@@ -1,6 +1,6 @@
 # Hot path
 
-Status: Draft · Built · 2026-09-18 · What `gaugewire statusline` does between stdin and exit, and the rules Claude Code imposes on it.
+Status: Draft · Built · 2026-09-20 · What `gaugewire statusline` does between stdin and exit, and the rules Claude Code imposes on it.
 
 ## At a glance
 
@@ -42,6 +42,11 @@ flowchart TD
 - **Stdout is a pipe Claude Code reads.** Any child that inherits it keeps the status line
   waiting until the child exits.
 - On Windows the command runs through Git Bash when installed, else PowerShell.
+- **Every open session runs the command, with the rate limits that session last received.**
+  Measured with eight sessions at a five second `refreshInterval`: 106 runs in 25 seconds,
+  about four a second, since sessions also run it on their own triggers. Each carried its own
+  view of the windows, and only the session in use carried the five-hour window at all. The
+  [reducer](reducer-and-dedupe.md) reconciles them.
 
 ## Rules
 

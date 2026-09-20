@@ -6,6 +6,8 @@ decision-date: 2026-09-17
 
 # Claude Code's status-line JSON is the only quota source
 
+Amended by: 2026-09-20-only-a-recent-payload-may-move-a-window.md (the per-window staleness guard)
+
 ## Members
 
 Repo owner (@sulcer), Claude Code.
