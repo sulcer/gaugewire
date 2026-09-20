@@ -37,7 +37,9 @@ change: still identical.
 4. Leave one session idle for more than five hours, then capture its payload: it must stop
    carrying `rate_limits.five_hour`. That is what dates a payload, so record what you see.
 5. While working in a session, capture two payloads far enough apart that usage moved: both
-   windows must change together, since they vouch for each other.
+   windows must change together, since they vouch for each other, and the five-hour percentage
+   must never fall while the five-hour reset stays the same. That pair is the clock that orders
+   payloads, so record any fall.
 6. History in Databox must be chronological and monotonic within the window. This confirms the
    staleness guard's assumption.
 
