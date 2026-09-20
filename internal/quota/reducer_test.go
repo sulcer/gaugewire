@@ -76,9 +76,6 @@ func TestReduceWindowStateMachine(t *testing.T) {
 	}
 }
 
-// TestPayloadAgeOrdersPayloadsByTheirFiveHourWindow covers the clock itself: a
-// five-hour window is at most five hours long, so a payload still inside one
-// was taken in the last five hours, and within that window usage only rises.
 func TestPayloadAgeOrdersPayloadsByTheirFiveHourWindow(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")
@@ -117,10 +114,8 @@ func TestPayloadAgeOrdersPayloadsByTheirFiveHourWindow(t *testing.T) {
 	}
 }
 
-// TestReduceMovesTheSevenDayWindowOnlyOnADatedPayload is the measured case: a
-// session that has not had a response since the subscription's schedule changed
-// keeps sending the window that schedule had open, and only a payload carrying
-// a five-hour window of its own may say which window is open.
+// The measured case: a session with no response since the schedule changed keeps
+// sending the window that schedule had open.
 func TestReduceMovesTheSevenDayWindowOnlyOnADatedPayload(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")
@@ -145,10 +140,8 @@ func TestReduceMovesTheSevenDayWindowOnlyOnADatedPayload(t *testing.T) {
 	}
 }
 
-// TestReduceRefusesAnUndatedPayloadWhenTheCurrentWindowResets is the trap that
-// reset order alone walks into: once the current window ends, the window a
-// session left behind still holds has days to run. With nothing in use to date
-// a payload, the machine reports the window as over rather than adopting it.
+// The trap reset order alone walks into: once the current window ends, the
+// superseded one a session still holds has days to run.
 func TestReduceRefusesAnUndatedPayloadWhenTheCurrentWindowResets(t *testing.T) {
 	t.Parallel()
 	currentReset := at(t, "2026-09-20T23:00:00Z")
@@ -170,9 +163,7 @@ func TestReduceRefusesAnUndatedPayloadWhenTheCurrentWindowResets(t *testing.T) {
 	}
 }
 
-// TestReduceTakesTheNewWindowFromTheSessionInUse is the same reset with someone
-// working: that session's payload carries a five-hour window, so it may name
-// the window that just opened.
+// The same reset with someone working, so a payload carries a five-hour window.
 func TestReduceTakesTheNewWindowFromTheSessionInUse(t *testing.T) {
 	t.Parallel()
 	currentReset := at(t, "2026-09-20T23:00:00Z")
@@ -198,10 +189,6 @@ func TestReduceTakesTheNewWindowFromTheSessionInUse(t *testing.T) {
 	}
 }
 
-// TestReduceSettlesWhenTwoDatedPayloadsDisagree covers a schedule change seen by
-// two sessions that both had a response in the last five hours: the payload
-// whose five-hour usage is further along is the later one, and the other cannot
-// take the window back, so the state settles instead of alternating.
 func TestReduceSettlesWhenTwoDatedPayloadsDisagree(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")
@@ -224,9 +211,6 @@ func TestReduceSettlesWhenTwoDatedPayloadsDisagree(t *testing.T) {
 	}
 }
 
-// TestReduceTrustsAnyPayloadUntilAFiveHourWindowIsSeen keeps a subscription
-// without a five-hour limit working: with nothing to date a payload by, the
-// machine takes what it is given.
 func TestReduceTrustsAnyPayloadUntilAFiveHourWindowIsSeen(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")
@@ -240,10 +224,6 @@ func TestReduceTrustsAnyPayloadUntilAFiveHourWindowIsSeen(t *testing.T) {
 	}
 }
 
-// TestReduceHoldsTheWindowWhenTwoPayloadsAreLevel covers the tie the clock
-// cannot order: two sessions with the same five-hour reading disagree about the
-// seven-day window. Neither may take it from the other, so the machine holds
-// what it has instead of moving, and publishing, on every tick.
 func TestReduceHoldsTheWindowWhenTwoPayloadsAreLevel(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")
@@ -266,10 +246,8 @@ func TestReduceHoldsTheWindowWhenTwoPayloadsAreLevel(t *testing.T) {
 	}
 }
 
-// TestReduceWithoutAFiveHourWindowKeepsTheWindowItHolds is the cost of the
-// trusting mode: with no five-hour window anywhere, no payload can be shown to
-// be later than another, so the window the machine filled first stands until it
-// ends.
+// The cost of the trusting mode: with no five-hour window anywhere, the window
+// the machine filled first stands until it ends.
 func TestReduceWithoutAFiveHourWindowKeepsTheWindowItHolds(t *testing.T) {
 	t.Parallel()
 	captured := at(t, "2026-09-20T13:51:00Z")

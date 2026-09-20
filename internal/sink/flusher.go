@@ -43,16 +43,14 @@ type Flusher struct {
 	Random  func() float64
 	Logger  *slog.Logger
 	Requeue bool
-	// SetupErr is a configuration problem found before the run, such as a sink
-	// that could not be built; it fails the run so lastFlush and the exit code
-	// show it.
+	// SetupErr is a problem found before the run, such as a sink that could not
+	// be built; it fails the run so lastFlush and the exit code show it.
 	SetupErr error
 }
 
-// Run performs one pass and exits. It never sleeps until the next attempt; a
-// later status-line invocation relaunches the flusher when work is due. Requeue
-// moves dead letters back first, under the same lock, so a concurrent
-// dead-letter can never lose an event.
+// Run performs one pass and exits; a later status-line invocation relaunches it
+// when work is due. Requeue moves dead letters back first, under the same lock,
+// so a concurrent dead-letter cannot lose an event.
 func (f Flusher) Run(ctx context.Context) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, RunTimeout)
 	defer cancel()
@@ -129,9 +127,8 @@ func (f Flusher) deliver(ctx context.Context, s Sink, events []store.PendingEven
 				if dlErr := store.DeadLetter(f.Home, events[i], s.ID()+": "+err.Error(), now); dlErr != nil {
 					return dlErr
 				}
-				// A dead-lettered event is out of circulation until requeued: clear
-				// its delivery map so no later sink in this run finds it targeted
-				// and recreates the pending file next to the dead-letter copy.
+				// Cleared so no later sink in this run finds the event targeted and
+				// recreates the pending file next to the dead-letter copy.
 				events[i].Event.Delivery = map[string]store.DeliveryState{}
 				res.DeadLettered++
 				f.Logger.Error("event dead-lettered", "eventId", events[i].Event.Snapshot.EventID, "sink", s.ID(), "code", code)

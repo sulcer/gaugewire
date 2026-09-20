@@ -19,8 +19,7 @@ type DeadLetterEntry struct {
 }
 
 // ListDeadLetters reads dead-letter/ newest first. Files quarantined as
-// .unreadable are counted, never decoded, since their content is by definition
-// not an event.
+// .unreadable are counted, never decoded.
 func ListDeadLetters(home string) ([]DeadLetterEntry, int, error) {
 	dir := filepath.Join(home, DeadLetterDir)
 	dirEntries, err := os.ReadDir(dir)

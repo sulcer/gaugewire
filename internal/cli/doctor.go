@@ -20,9 +20,8 @@ import (
 // ErrUnhealthy makes doctor exit 1 when any check fails.
 var ErrUnhealthy = errors.New("one or more checks failed")
 
-// samplePayload is what doctor feeds the renderer. It carries every documented
-// status-line field a renderer is likely to read, so a renderer that indexes
-// into the payload does not fail on the sample alone.
+// samplePayload carries every documented status-line field a renderer is likely
+// to read, so indexing into it cannot fail on the sample alone.
 const samplePayload = `{"session_id":"doctor","cwd":"/","model":{"id":"claude-sonnet-5","display_name":"Sonnet 5"},"workspace":{"current_dir":"/","project_dir":"/"},"version":"2.1.274","rate_limits":{"five_hour":{"used_percentage":24,"resets_at":1789669200},"seven_day":{"used_percentage":53.5,"resets_at":1789722000}}}`
 
 const rendererTimeout = 5 * time.Second
@@ -39,17 +38,10 @@ type doctorInput struct {
 	workDir      string
 	now          time.Time
 	runRenderer  func(ctx context.Context, command string) error
-
-	// httpClient is the client the sink rows call the API with; nil means the
-	// databox client's default. getenv resolves a sink's API key variable.
-	httpClient *http.Client
-	getenv     func(string) string
-
-	// cfg is the decoded config.json and cfgErr whatever loading it returned.
-	// Load returns the decoded value alongside ErrInvalid, so every row after
-	// the configuration row still describes a config.json that failed validation.
-	cfg    config.Config
-	cfgErr error
+	httpClient   *http.Client
+	getenv       func(string) string
+	cfg          config.Config
+	cfgErr       error
 }
 
 func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) error {
@@ -72,8 +64,7 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 			return err
 		}
 	}
-	// A path that cannot be resolved is still reported by the checks rather
-	// than aborting the report.
+	// A path that cannot be resolved is reported by the checks, not here.
 	if resolved, resolveErr := resolveSettingsPath(*settingsPath); resolveErr == nil {
 		*settingsPath = resolved
 	}
@@ -94,9 +85,8 @@ func runDoctor(ctx context.Context, args []string, _ BuildInfo, streams IO) erro
 	return nil
 }
 
-// recordedOrDefaultSettingsPath prefers the file install edited, so doctor
-// checks the same file even when it is not the user settings file. An invalid
-// config.json still carries the record: Load returns the decoded value with it.
+// recordedOrDefaultSettingsPath prefers the file install edited, so doctor checks
+// the same file even when it is not the user settings file.
 func recordedOrDefaultSettingsPath(cfg config.Config) (string, error) {
 	if cfg.Install != nil && cfg.Install.SettingsPath != "" {
 		return cfg.Install.SettingsPath, nil

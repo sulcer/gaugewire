@@ -57,9 +57,8 @@ func checkStatusLineIntegration(cfg config.Config, in doctorInput) check {
 }
 
 // checkOverrides looks for project settings that replace the status line or
-// disable hooks, both of which stop the installed command from running. The
-// files are read in Claude Code's precedence order, local before project before
-// user, so the file named is the one that actually wins.
+// disable hooks. The files are read in Claude Code's precedence order, local
+// before project before user, so the file named is the one that wins.
 func checkOverrides(in doctorInput) check {
 	name := "overrides"
 	projectLocal := filepath.Join(in.workDir, ".claude", "settings.local.json")
@@ -69,8 +68,7 @@ func checkOverrides(in doctorInput) check {
 			return check{name: name, detail: path + " overrides statusLine"}
 		}
 	}
-	// The first layer that defines disableAllHooks decides; a false there hides
-	// whatever a lower layer says.
+	// The first layer that defines disableAllHooks decides.
 	for _, path := range []string{projectLocal, projectSettings, in.settingsPath} {
 		member, ok := settingsMember(path, "disableAllHooks")
 		if !ok || !member.Found {
@@ -178,9 +176,8 @@ func checkSpool(home string) check {
 	return check{name: "spool", ok: true, detail: detail}
 }
 
-// checkSink is the three rows one enabled sink contributes. Every row calls the
-// API, each call bounded by the client's own request timeout. A key that cannot
-// be resolved fails all three: none of them can be answered without a client.
+// checkSink is the three rows one enabled sink contributes, each calling the
+// API. A key that cannot be resolved fails all three.
 func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.IngestionRecord) []check {
 	auth := "sink auth (" + s.ID + ")"
 	datasets := "datasets (" + s.ID + ")"
@@ -201,8 +198,7 @@ func checkSink(ctx context.Context, in doctorInput, s config.Sink, rec store.Ing
 }
 
 // sinkClient resolves the sink's key and builds its client, returning the key
-// file warning alongside. The key stays in the client: it reaches no row, no
-// error and no log line.
+// file warning alongside. The key reaches no row, no error and no log line.
 func sinkClient(in doctorInput, s config.Sink) (*databox.Client, string, error) {
 	key, warn, err := loadAPIKey(s.Credentials, in.getenv)
 	if err != nil {
@@ -225,10 +221,8 @@ func checkSinkAuth(ctx context.Context, client *databox.Client, warn, name strin
 	return check{name: name, ok: true, detail: detail}
 }
 
-// checkSinkDatasets confirms the configured dataset ids still exist in the
-// data source; a dataset deleted in the product is why delivery starts failing.
-// An unconfigured data source id is reported without a request: there is
-// nothing to list it against.
+// checkSinkDatasets confirms the configured dataset ids still exist in the data
+// source; a dataset deleted in the product is why delivery starts failing.
 func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sink, name string) check {
 	if s.DataSourceID == 0 {
 		return check{name: name, detail: "data source not configured"}
@@ -260,11 +254,9 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 	return check{name: name, ok: true, detail: strings.Join(found, ", ")}
 }
 
-// checkLastIngestion re-reads what the sink last had accepted. An Ingestion's
-// Status mirrors the response envelope, which is "success" for anything the API
-// hands back, so whether the rows landed is decided by the rejected count. A
-// recorded ingestion whose dataset id is no longer configured, or whose lookup
-// errors, fails that dataset's part without stopping the other one.
+// checkLastIngestion re-reads what the sink last had accepted. Status mirrors
+// the response envelope, which is "success" for anything the API hands back, so
+// whether the rows landed is decided by the rejected count.
 func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Sink, rec store.IngestionRecord, name string) check {
 	accepted := true
 	var parts []string

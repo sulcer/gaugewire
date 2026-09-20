@@ -85,8 +85,7 @@ func windowLine(w quota.Window, now time.Time, zone *time.Location) string {
 		if w.UsedPercentage == nil || w.ResetsAt == nil {
 			return "unknown"
 		}
-		// The stored and published value stays exact; a person reading a status
-		// line does not need the float noise a payload can carry.
+		// Only the display is rounded; the stored and published value stays exact.
 		percent := strconv.FormatFloat(math.Round(*w.UsedPercentage*10)/10, 'f', -1, 64) + "%"
 		return fmt.Sprintf("%-10s Reset:  %s", percent, resetLabel(*w.ResetsAt, now, zone))
 	case quota.WindowExpired:

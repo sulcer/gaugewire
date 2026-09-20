@@ -9,8 +9,7 @@ import (
 	"time"
 )
 
-// BuildInfo describes the running binary. The linker sets these values for a
-// release build; a development build falls back to the module build info.
+// BuildInfo describes the running binary.
 type BuildInfo struct {
 	Version string
 	Commit  string
