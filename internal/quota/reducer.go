@@ -54,6 +54,10 @@ func reduceWindow(stored Window, incoming *Reading, now time.Time, clock age) Wi
 // orders payloads by age. The stored five-hour window carries the newest pair
 // the machine has seen.
 //
+// A later five-hour reset counts as a later window only once the one the machine
+// holds has ended; while that one is still running, a later reset is a window
+// re-anchored under the payload, not a payload taken later.
+//
 // A payload with no five-hour window of its own proves nothing, and counts only
 // while this machine has never seen one, because the subscription may have no
 // five-hour limit at all. Even then it is never treated as newer, so it cannot
@@ -70,6 +74,12 @@ func payloadAge(fiveHour Window, obs Observation) age {
 	}
 	switch {
 	case obs.FiveHour.ResetsAt.After(*fiveHour.ResetsAt):
+		if fiveHour.ResetsAt.After(obs.CapturedAt) {
+			// A five-hour window the machine holds is still running, so a
+			// payload announcing a later one was not taken later: its window
+			// was re-anchored, exactly as the seven-day schedule was.
+			return undated
+		}
 		return newer
 	case !obs.FiveHour.ResetsAt.Equal(*fiveHour.ResetsAt):
 		return undated
