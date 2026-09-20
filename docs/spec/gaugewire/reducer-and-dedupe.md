@@ -63,8 +63,10 @@ which still has days left, becomes the soonest and captures the machine again.
 What settles it is the five-hour window, which dates the payload carrying it. It is at most
 five hours long, so a payload whose five-hour window has not reset yet was taken within the
 last five hours, and the window doubles as a clock: within it usage only rises, and a later
-reset is a later window, so the pair orders payloads by age. The stored five-hour window holds
-the newest pair the machine has seen. A payload at least level with it may name a window the
+reset is a later window once the one the machine holds has ended, so the pair orders payloads by
+age. A later reset while the machine's own five-hour window is still running is that window
+re-anchored, which is what happened to the weekly schedule, so it dates nothing. The stored
+five-hour window holds the newest pair the machine has seen. A payload at least level with it may name a window the
 machine does not hold, because that window is `unknown` or has ended; taking a window that is
 still open and calling it something else takes a payload past the clock, so two sessions level
 with each other cannot trade the window back and forth on every tick. Every other payload may
