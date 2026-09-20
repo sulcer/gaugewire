@@ -8,8 +8,9 @@ Each window is reduced independently through a three-state machine. A missing wi
 zero. Every open Claude Code session runs the status line with the rate limits it last received,
 so one machine sees many readings of one window, and after a schedule change readings of a
 window that no longer applies. A window is identified by its reset time; a reading of a window that
-has ended says nothing, only a payload from the last five hours may name a different window,
-and within one window usage only rises. Publishing
+has ended says nothing, any payload may refine the window already stored because usage only
+rises within it, and only a payload dated by its own five-hour window may say that a different
+window is open. Publishing
 is decided against the last published snapshot, not the previous input, so small drifts
 accumulate until they cross the threshold.
 
@@ -18,14 +19,13 @@ accumulate until they cross the threshold.
 ```mermaid
 stateDiagram-v2
     [*] --> unknown
-    unknown --> observed: open reading
-    observed --> observed: same resetsAt and used ≥ stored
-    observed --> observed: different resetsAt from a payload of the last five hours
-    observed --> observed: stored resetsAt ≤ now, any open reading (the window reset)
+    unknown --> observed: open reading from a dated payload
+    observed --> observed: same resetsAt and used ≥ stored, any payload
+    observed --> observed: different resetsAt from a dated payload
     observed --> observed: reading refused or absent, stored resetsAt > now (keep)
     observed --> expired: reading refused or absent, stored resetsAt ≤ now
-    expired --> observed: open reading
-    unknown --> unknown: absent, or every reading already ended
+    expired --> observed: open reading from a dated payload
+    unknown --> unknown: absent, every reading already ended, or no dated payload
 ```
 
 ## Validation
@@ -41,16 +41,15 @@ rendering continues.
 
 | Incoming | Stored | Result |
 |---|---|---|
-| present, `resetsAt ≤ now` | any | ignore: that window has ended |
-| present, open | not `observed` | accept: `observed`, copy value and reset |
-| present, open | `observed`, stored `resetsAt ≤ now` | accept: the stored window has ended |
-| present, open | `observed`, same `resetsAt`, incoming `used ≥ stored` | accept |
-| present, open | `observed`, same `resetsAt`, incoming `used < stored` | ignore (a session behind the others) |
-| present, open | `observed`, different `resetsAt`, payload of the last five hours | accept: the current window |
-| present, open | `observed`, different `resetsAt`, older payload | ignore: a superseded schedule |
-| absent, or ignored | `unknown` | stay `unknown` |
-| absent, or ignored | stored `resetsAt > now` | keep stored |
-| absent, or ignored | stored `resetsAt ≤ now` | `expired`, `usedPercentage = null`, keep `resetsAt` |
+| Incoming reading | Stored | Payload | Result |
+|---|---|---|---|
+| `resetsAt ≤ now` | any | any | ignore: that window has ended |
+| open, same `resetsAt` | `observed` | any, dated or not | accept when `used ≥ stored`, else ignore (a session behind the others) |
+| open, different `resetsAt` | any, including `unknown` and ended | dated | accept: `observed`, copy value and reset |
+| open, different `resetsAt` | any | not dated | ignore: only a dated payload names a window |
+| absent, or ignored | `unknown` | any | stay `unknown` |
+| absent, or ignored | stored `resetsAt > now` | any | keep stored |
+| absent, or ignored | stored `resetsAt ≤ now` | any | `expired`, `usedPercentage = null`, keep `resetsAt` |
 
 **Why the guard exists.** Measured on a machine with eight open sessions, each ticking every
 five seconds: seven-day readings of 27, 44, 64, 66, 76 and 78 per cent all carried the same
@@ -62,13 +61,14 @@ was then refused until that reset passed. Reset order alone cannot settle it: ta
 soonest open reset is right until the current window ends, and then the superseded window,
 which still has days left, becomes the soonest and captures the machine again.
 
-What settles it is the five-hour window. It is five hours long, so a payload whose five-hour
-window has not reset yet was taken within the last five hours. Windows partition time, so
-under one schedule every payload with time left names the same reset: two open resets mean
-two schedules, and the recent payload is the one that knows which holds. In the measurement
-only the session in use carried a five-hour window at all. Within one window usage only rises,
-so the highest value is the truth whatever the payload's age, and a session behind the others
-never flaps the state. Decision:
+What settles it is the five-hour window, which dates the payload carrying it. It is at most
+five hours long, so a payload whose five-hour window has not reset yet was taken within the
+last five hours, and the window doubles as a clock: within it usage only rises, and a later
+reset is a later window, so the pair orders payloads by age. A payload at least as recent as
+the stored five-hour window may say which window is open; every other payload may still raise
+the usage of the window already stored. In the measurement only the session in use carried a
+five-hour window at all. A machine that has never seen one trusts any payload, because the
+subscription may have no five-hour limit. Decision:
 [ADR](../../adr/2026-09-20-only-a-recent-payload-may-move-a-window.md).
 
 `lastObservedAt` records that a payload arrived, including one whose readings were all
@@ -104,4 +104,9 @@ Defaults: `minDeltaPercentage: 1.0`, `heartbeatInterval: 30m`. Example against a
   six readings of one window matched `/usage`. The acceptance test confirms it over a full window.
 - How often the subscription's window schedule changes. A change is followed as soon as one
   session in use reports it; while every session on the machine has been idle for more than
-  five hours, the machine keeps the window it holds until that window ends.
+  five hours, the machine keeps the window it holds until that window ends and then reports it
+  as expired.
+- The three facts the dating rests on, listed in the
+  [ADR](../../adr/2026-09-20-only-a-recent-payload-may-move-a-window.md) and checked by the
+  [acceptance test](../../how-tos/acceptance-test.md): the five-hour window's length, both
+  windows coming from one response, and whether a weekly limit always comes with a five-hour one.

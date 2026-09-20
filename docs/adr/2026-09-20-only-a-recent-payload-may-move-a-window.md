@@ -46,57 +46,74 @@ say which payload is current.
 ## Options considered
 
 1. Keep the newest reset. What was measured: a superseded window wins for days.
-2. Take the soonest open reset. Correct until the current window resets, then the same lock-in in
-   the other direction.
+2. Take the soonest open reset. Correct until the current window resets, then the superseded
+   window, which still has days to run, becomes the soonest and captures the machine again.
 3. Take the most recent reading whatever it says. Eight sessions tick independently, so the state
    would flap between six values within seconds and publish on every flip.
 4. Remember which session sent what. The payload's session id is deliberately never read or
    stored ([privacy](2026-09-17-claude-statusline-is-the-only-quota-source.md)), and per-session
    state would grow without bound.
-5. Use the five-hour window as proof of the payload's age.
+5. Date the payload by its own five-hour window, and let only a dated payload say which window is
+   open.
 
 ## Decision
 
-Option 5. A five-hour window is five hours long, so a payload whose five-hour window has not reset
-yet was taken within the last five hours. Windows partition time, so under one schedule every
-payload with time left on the clock names the same reset; two open resets mean two schedules, and
-a payload from the last five hours is the one that knows which schedule holds.
+Option 5. A five-hour window is at most five hours long, so a payload whose five-hour window has
+not reset yet was taken within the last five hours. That window is also the payload's clock:
+within one five-hour window its usage only rises, and a later reset is a later window, so the
+pair orders payloads by age. The stored five-hour window holds the most recent pair the machine
+has seen, and a payload counts as dated when it is at least that recent.
 
 Per window:
 
 - a reading whose reset has passed is refused, whoever sent it, because that window has ended;
-- a reading of the window already stored is kept when its usage is at or above the stored value,
-  whatever the payload's age, since usage only rises within a window;
-- a reading of a different open window is taken only from a payload of the last five hours;
+- a reading of the window already stored refines it when its usage is at or above the stored
+  value, whatever the payload's age, since usage only rises within a window and a session behind
+  the others reports less;
+- saying that a different window is open replaces what the machine reports, so it takes a dated
+  payload, whether the stored window is open, ended or never seen;
 - a stored window whose reset has passed retires to `expired`, whether the reading that arrived
   was absent or refused.
 
-The five-hour window is judged by the same rule, where the proof is the reading itself.
+A payload with no five-hour window of its own proves nothing and is trusted only while the machine
+has never seen one, because the subscription may have no five-hour limit at all.
 
 The other decisions of the amended ADR still stand: the status line is the only quota source, only
 the four quota fields and the version are read, the source is versioned by Claude Code's own
 version, and nothing else from the payload is persisted.
 
+## Assumptions to verify
+
+The rule rests on three facts about Claude Code that its public documentation does not state, so
+the [acceptance test](../how-tos/acceptance-test.md) checks each:
+
+- a five-hour window is at most five hours long, which is what bounds a dated payload's age;
+- both windows in one payload come from the same response, so a live five-hour window vouches for
+  the seven-day window beside it;
+- a subscription that has a weekly limit also has a five-hour one, failing which a machine stays
+  in the trusting mode above.
+
 ## Consequences
 
-- A superseded schedule is dropped as soon as the session in use reports the current window, and
-  cannot come back: no older payload may move a window.
-- A real reset is followed immediately. Sessions left behind carry a window that has ended, and
-  their readings are refused rather than resurrecting it.
-- A machine whose every session has been idle for more than five hours keeps the window it holds
-  until that window ends, then reports `expired` with no percentage. It cannot follow a schedule
-  change while nothing is in use, which is also when its numbers matter least.
-- If the schedule changes and two sessions both had a response within five hours on either side
-  of the change, each may move the window back, so the state can alternate until the older of the
-  two passes five hours. Bounded, rare, and visible in history as alternating resets.
-- When the machine adopts the current window it takes whichever session's value arrives first and
-  then climbs to the highest, so one correction can publish a few `change` events within seconds.
+- The measured machine corrects within one tick: the session in use is dated, the sessions that
+  predate the change are not.
+- A superseded window cannot come back while a dated payload is arriving, and cannot be adopted
+  when the current window ends either, because naming a different window needs a dated payload.
+- With nothing in use, a machine keeps the window it holds until that window ends and then reports
+  `expired` with no percentage, rather than adopting a window it cannot date. It fills again from
+  the first payload of a session in use.
+- Two dated payloads that straddle a schedule change are ordered by the clock, so the later one
+  wins and the earlier cannot take the window back: the state settles instead of alternating and
+  publishing on every flip. Only payloads with the same five-hour reset *and* the same five-hour
+  usage are unordered; the tie ends as soon as either session gets a response.
+- When the machine adopts a window it takes whichever session's value arrives first and then
+  climbs to the highest, so one correction can publish a few `change` events within seconds.
   History stays monotonic within the window.
-- A payload whose windows have all ended observes nothing. A machine that has never observed a
-  window reports `unknown`; one that has reports `expired`, keeping the reset for diagnostics.
-- The rule reads the local clock to decide what has ended. A clock more than a window fast refuses
-  every reading of that window; `doctor` reports the windows and the age of the last observation,
-  which is where that shows up.
+- A machine that has never seen a five-hour window trusts any payload, which is the old behaviour
+  and the only mode in which a stale session can still name a window.
+- The rule reads the local clock to decide what has ended. A clock five hours fast dates no
+  payload, so the machine keeps the window it holds and reports `expired` when it ends; `doctor`
+  shows the windows and the age of the last observation, which is where that surfaces.
 - Fixtures with fixed timestamps no longer produce an observation, so the hot-path tests move the
   fixture's two reset timestamps ahead of now, byte for byte.
 - Model-specific weekly limits, which `/usage` shows separately, are not in the payload at all, so
