@@ -40,7 +40,7 @@ func TestStatuslineRendersExactBytesAndSpoolsAnEvent(t *testing.T) {
 	home := t.TempDir()
 	cfg := testConfig(databoxSink())
 	cfg.Renderer.Command = "cat"
-	payload := fixture(t, "full.json")
+	payload := openPayload(t, "full.json")
 	got := runHotPath(t, home, cfg, payload)
 	want := hotPath{stdout: string(payload), spawned: []string{home}, pending: 1}
 	if got.err != want.err || got.stdout != want.stdout || got.stderr != want.stderr || len(got.spawned) != 1 || got.spawned[0] != home || got.pending != want.pending {
@@ -50,7 +50,7 @@ func TestStatuslineRendersExactBytesAndSpoolsAnEvent(t *testing.T) {
 
 func TestStatuslineWithoutARendererWritesNothing(t *testing.T) {
 	home := t.TempDir()
-	got := runHotPath(t, home, testConfig(databoxSink()), fixture(t, "full.json"))
+	got := runHotPath(t, home, testConfig(databoxSink()), openPayload(t, "full.json"))
 	want := hotPath{spawned: []string{home}, pending: 1}
 	if got.err != want.err || got.stdout != "" || got.stderr != "" || len(got.spawned) != 1 || got.pending != want.pending {
 		t.Fatalf("got %+v, want %+v", got, want)

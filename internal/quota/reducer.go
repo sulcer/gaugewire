@@ -24,14 +24,18 @@ func Reduce(state State, obs Observation) State {
 }
 
 func reduceWindow(stored Window, incoming *Reading, now time.Time) Window {
-	if incoming != nil {
-		if !accepts(stored, *incoming) {
-			return stored
-		}
+	if incoming != nil && accepts(stored, *incoming, now) {
 		used := incoming.UsedPercentage
 		resetsAt := incoming.ResetsAt
 		return Window{Status: WindowObserved, UsedPercentage: &used, ResetsAt: &resetsAt}
 	}
+	return age(stored, now)
+}
+
+// age keeps a window that is still open and retires one whose reset has passed,
+// whether the reading that arrived was absent or refused: a value from a window
+// that has ended says nothing about the window open now.
+func age(stored Window, now time.Time) Window {
 	if stored.ResetsAt == nil || stored.Status == WindowUnknown {
 		return Window{Status: WindowUnknown}
 	}
@@ -41,19 +45,26 @@ func reduceWindow(stored Window, incoming *Reading, now time.Time) Window {
 	return Window{Status: WindowExpired, ResetsAt: stored.ResetsAt}
 }
 
-// accepts is the staleness guard. Every Claude Code session re-sends its own
-// last-known values, so an idle session must not overwrite an active one: an
-// incoming value replaces an observed window only when its reset is newer, or
-// equal with usage at or above the stored value.
-func accepts(stored Window, incoming Reading) bool {
+// accepts is the staleness guard. Every open Claude Code session runs the
+// status line with the rate limits it last received, so one machine sees many
+// readings of one window and, after the subscription's schedule changes,
+// readings of a window that no longer applies. A reading counts when it
+// describes the window open now: its reset is still ahead, and among open
+// windows the one resetting soonest is the current one, because a later reset
+// can only come from a session whose values predate the change. Usage rises
+// within a window, so among readings of one window the highest value wins.
+func accepts(stored Window, incoming Reading, now time.Time) bool {
+	if !incoming.ResetsAt.After(now) {
+		return false
+	}
 	if stored.Status != WindowObserved || stored.ResetsAt == nil || stored.UsedPercentage == nil {
 		return true
 	}
-	if incoming.ResetsAt.After(*stored.ResetsAt) {
+	if !stored.ResetsAt.After(now) {
 		return true
 	}
 	if incoming.ResetsAt.Equal(*stored.ResetsAt) {
 		return incoming.UsedPercentage >= *stored.UsedPercentage
 	}
-	return false
+	return incoming.ResetsAt.Before(*stored.ResetsAt)
 }

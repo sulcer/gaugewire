@@ -46,8 +46,12 @@ func TestReduceWindowStateMachine(t *testing.T) {
 		{"same reset and lower usage is a stale session and is ignored", observed(70, future), &Reading{40, future}, observed(70, future)},
 		{"same reset and higher usage is accepted", observed(40, future), &Reading{70, future}, observed(70, future)},
 		{"same reset and equal usage is accepted", observed(40, future), &Reading{40, future}, observed(40, future)},
-		{"newer reset with lower usage is a new window and is accepted", observed(70, future), &Reading{3, later}, observed(3, later)},
-		{"older reset is a stale session and is ignored", observed(70, later), &Reading{90, future}, observed(70, later)},
+		{"a later reset while the stored window is open comes from a superseded schedule and is ignored", observed(70, future), &Reading{3, later}, observed(70, future)},
+		{"a sooner open reset is the current window and is accepted", observed(70, later), &Reading{90, future}, observed(90, future)},
+		{"a later reset is accepted once the stored window has reset", observed(70, past), &Reading{3, later}, observed(3, later)},
+		{"a reading whose reset has passed is ignored", observed(70, future), &Reading{90, past}, observed(70, future)},
+		{"a reading whose reset has passed cannot start a window", Window{Status: WindowUnknown}, &Reading{90, past}, Window{Status: WindowUnknown}},
+		{"the stored window retires when only passed readings arrive", observed(70, past), &Reading{70, past}, Window{Status: WindowExpired, ResetsAt: &past}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

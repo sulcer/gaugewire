@@ -31,7 +31,10 @@ change: still identical.
 1. Open a second session and leave it idle. Work in the first until the five-hour percentage
    rises by more than the threshold.
 2. `gaugewire status` must show the higher value and never fall back to the idle session's value.
-3. History in Databox must be chronological and monotonic within the window. This confirms the
+3. With several sessions open, `gaugewire status` must agree with `/usage` while they tick:
+   each session reports the rate limits it last received, and a session that predates a
+   change of schedule carries a reset that no longer applies.
+4. History in Databox must be chronological and monotonic within the window. This confirms the
    staleness guard's assumption.
 
 ## 4. Network failure

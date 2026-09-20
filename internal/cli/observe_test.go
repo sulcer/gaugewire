@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,6 +23,34 @@ func fixture(t *testing.T, name string) []byte {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return data
+}
+
+// openPayload is a fixture payload whose windows are still open when the test
+// runs. The reducer refuses a reading whose reset has passed, and the hot path
+// reads the real clock, so a fixture's fixed timestamps would observe nothing.
+func openPayload(t *testing.T, name string) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(fixture(t, name), &doc); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	limits, ok := doc["rate_limits"].(map[string]any)
+	if !ok {
+		t.Fatalf("fixture %s carries no rate_limits", name)
+	}
+	ahead := map[string]time.Duration{"five_hour": time.Hour, "seven_day": 25 * time.Hour}
+	for window, d := range ahead {
+		w, found := limits[window].(map[string]any)
+		if !found {
+			continue
+		}
+		w["resets_at"] = time.Now().Add(d).Unix()
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	return raw
 }
 
 func testConfig(sinks ...config.Sink) config.Config {
