@@ -56,3 +56,53 @@ revisit, reference. Remove an entry when it ships or when the trigger is retired
 - **Why deferred:** the spec is small enough to re-read whole.
 - **Trigger:** a spec drift is found in review twice.
 - **Reference:** [documentation system ADR](adr/2026-09-17-documentation-system.md).
+
+## Replay a quarantined spool file
+
+- **What:** let `flush --requeue` replay a `dead-letter/<name>.unreadable` file, and count those
+  files in `status`. `doctor`'s spool row already reports them; nothing else sees them, because
+  the spool listing accepts only `.json`.
+- **Why deferred:** a file that cannot be decoded has no event to deliver, so replaying it needs
+  a human to repair the bytes first. No quarantine has been seen on a real machine.
+- **Trigger:** `doctor` reports an unreadable file on a real machine.
+- **Reference:** [spool and flush](spec/gaugewire/spool-and-flush.md), quarantine step.
+
+## Report flush health precisely
+
+- **What:** make `lastFlush` tell the truth in three cases it currently blurs: a run that
+  dead-lettered every event records `ok`, a run that ends early on a quarantine or listing error
+  records nothing, and a run skipped because another flusher holds the lock records nothing and
+  exits 0.
+- **Why deferred:** each case is visible in the log and in the pending and dead-letter counts,
+  and the flusher that does hold the lock records its own outcome.
+- **Trigger:** `status` misleads someone during a real incident.
+- **Reference:** [spool and flush](spec/gaugewire/spool-and-flush.md), flusher run.
+
+## Back off when a sink cannot deliver at all
+
+- **What:** stop spawning a flusher on every status-line tick while a sink is misconfigured. Due
+  work stays due, so each tick forks a flusher that fails the same way and writes the same lines.
+- **Why deferred:** the failure is now visible: the run fails, `status` shows the reason and
+  `flush` exits 1. Each attempt is cheap and ends in milliseconds.
+- **Trigger:** a machine logs the same failed flush for a day, or the log rotates from it.
+- **Reference:** [hot path](spec/gaugewire/hot-path.md) rule 5,
+  [spool and flush](spec/gaugewire/spool-and-flush.md).
+
+## Measure the hot path budget
+
+- **What:** measure Gaugewire's own work in `statusline`, excluding the renderer, against the
+  50 ms p95 the spec states, and keep the measurement somewhere a regression would show.
+- **Why deferred:** the work is a parse, a lock, two small file writes and a spawn; no number has
+  been taken, so the spec says "not yet measured".
+- **Trigger:** the acceptance test runs, or someone reports a slow status line.
+- **Reference:** [hot path](spec/gaugewire/hot-path.md) rule 8.
+
+## Quieter doctor for an unreachable sink
+
+- **What:** stop repeating one authentication failure across all three sink rows, and bound the
+  whole sink section rather than each call, so an API that never answers costs less than a minute
+  per enabled sink.
+- **Why deferred:** independent rows are honest and each call already has its own timeout; one
+  sink is the normal case.
+- **Trigger:** a fleet configures several sinks, or someone reports that `doctor` hangs.
+- **Reference:** [cli and install](spec/gaugewire/cli-and-install.md), doctor.
