@@ -79,6 +79,10 @@ Per window:
 - a stored window whose reset has passed retires to `expired`, whether the reading that arrived
   was absent or refused.
 
+Asking for a payload past the clock on every move would be one rule instead of two, but then a
+seven-day reset would report `expired` until some session's five-hour usage moved, so the strict
+test is kept for the case that can flap and no wider.
+
 A payload with no five-hour window of its own proves nothing and is trusted only while the machine
 has never seen one, because the subscription may have no five-hour limit at all. Even then it
 never counts as past the clock, so it can fill a window the machine does not hold but not take
@@ -103,8 +107,13 @@ the [acceptance test](../how-tos/acceptance-test.md) checks each:
 
 ## Consequences
 
-- The measured machine corrects within one tick: the session in use is past the clock the stale
-  sessions left, and they cannot take the window back.
+- A machine with no window stored takes the first dated payload, so the measured fleet corrects on
+  the first tick of a session in use, and the stale sessions cannot take the window back.
+- A machine already holding the superseded window, which is what the measurement left behind,
+  holds it until a payload past its own clock arrives. The clock there is the in-use session's own
+  five-hour pair, so the correction lands on the first tick whose five-hour usage has risen, or
+  when that five-hour window resets: within five hours, and within minutes on a machine being
+  worked on.
 - A superseded window cannot come back while a dated payload is arriving, and cannot be adopted
   when the current window ends either, because naming a window still takes a dated payload.
 - With nothing in use, a machine keeps the window it holds until that window ends and then reports
