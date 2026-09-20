@@ -36,11 +36,15 @@ change: still identical.
    change of schedule carries a reset that no longer applies.
 4. Leave one session idle for more than five hours, then capture its payload: it must stop
    carrying `rate_limits.five_hour`. That is what dates a payload, so record what you see.
-5. While working in a session, capture two payloads far enough apart that usage moved: both
+5. Record `rate_limits.five_hour.resets_at` daily, and across any change of the weekly schedule.
+   The rule assumes a five-hour window is never re-anchored while it is running: within one
+   window every payload must carry the same reset, and a new reset must appear only after the
+   old one has passed. A reset that moves early is the assumption failing, so note the date.
+6. While working in a session, capture two payloads far enough apart that usage moved: both
    windows must change together, since they vouch for each other, and the five-hour percentage
    must never fall while the five-hour reset stays the same. That pair is the clock that orders
    payloads, so record any fall.
-6. History in Databox must be chronological and monotonic within the window. This confirms the
+7. History in Databox must be chronological and monotonic within the window. This confirms the
    staleness guard's assumption.
 
 ## 4. Network failure

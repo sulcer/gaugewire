@@ -16,6 +16,8 @@ func at(t *testing.T, value string) time.Time {
 	return parsed
 }
 
+var ageName = map[age]string{undated: "undated", asRecent: "asRecent", newer: "newer"}
+
 func observed(used float64, resetsAt time.Time) Window {
 	return Window{Status: WindowObserved, UsedPercentage: &used, ResetsAt: &resetsAt}
 }
@@ -95,18 +97,21 @@ func TestPayloadAgeOrdersPayloadsByTheirFiveHourWindow(t *testing.T) {
 		{"a five-hour window that has ended dates nothing", observed(2, reset), &Reading{2, ended}, undated},
 		{"any open five-hour window is newer than no window at all", Window{Status: WindowUnknown}, &Reading{2, reset}, newer},
 		{"a five-hour window that has ended is newer than no window at all", Window{Status: WindowExpired, ResetsAt: &ended}, &Reading{2, reset}, newer},
-		{"a later five-hour reset is a later window", observed(2, earlier), &Reading{1, reset}, newer},
+		{"a later five-hour reset once the stored window has ended is a later window", observed(2, ended), &Reading{1, reset}, newer},
+		{"a later five-hour reset while the stored window still runs is a re-anchor", observed(2, earlier), &Reading{1, reset}, undated},
 		{"an earlier five-hour reset is an earlier window", observed(2, reset), &Reading{90, earlier}, undated},
 		{"more usage in the same five-hour window is later", observed(2, reset), &Reading{5, reset}, newer},
 		{"the same usage in the same five-hour window is level", observed(2, reset), &Reading{2, reset}, asRecent},
 		{"less usage in the same five-hour window is earlier", observed(5, reset), &Reading{2, reset}, undated},
+		{"a five-hour window that has ended while none was ever seen is still trusted", Window{Status: WindowUnknown}, &Reading{2, ended}, asRecent},
+		{"a stored window with no values to compare dates every payload", Window{Status: WindowObserved}, &Reading{2, reset}, newer},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := payloadAge(tc.fiveHour, Observation{CapturedAt: captured, FiveHour: tc.incoming})
 			if got != tc.want {
-				t.Fatalf("age mismatch: want %d, got %d", tc.want, got)
+				t.Fatalf("age mismatch: want %s, got %s", ageName[tc.want], ageName[got])
 			}
 		})
 	}
@@ -140,11 +145,11 @@ func TestReduceMovesTheSevenDayWindowOnlyOnADatedPayload(t *testing.T) {
 	}
 }
 
-// TestReduceRefusesASupersededWindowWhenTheCurrentOneResets is the trap that
+// TestReduceRefusesAnUndatedPayloadWhenTheCurrentWindowResets is the trap that
 // reset order alone walks into: once the current window ends, the window a
 // session left behind still holds has days to run. With nothing in use to date
 // a payload, the machine reports the window as over rather than adopting it.
-func TestReduceRefusesASupersededWindowWhenTheCurrentOneResets(t *testing.T) {
+func TestReduceRefusesAnUndatedPayloadWhenTheCurrentWindowResets(t *testing.T) {
 	t.Parallel()
 	currentReset := at(t, "2026-09-20T23:00:00Z")
 	supersededReset := at(t, "2026-09-25T07:00:00Z")
@@ -156,9 +161,12 @@ func TestReduceRefusesASupersededWindowWhenTheCurrentOneResets(t *testing.T) {
 
 	state = Reduce(state, Observation{CapturedAt: afterReset, SevenDay: &Reading{7, supersededReset}})
 
-	want := Window{Status: WindowExpired, ResetsAt: &currentReset}
-	if diff := cmp.Diff(want, state.Windows.SevenDay); diff != "" {
-		t.Fatalf("seven-day mismatch (-want +got):\n%s", diff)
+	want := Windows{
+		FiveHour: Window{Status: WindowExpired, ResetsAt: &currentReset},
+		SevenDay: Window{Status: WindowExpired, ResetsAt: &currentReset},
+	}
+	if diff := cmp.Diff(want, state.Windows); diff != "" {
+		t.Fatalf("windows mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -184,9 +192,9 @@ func TestReduceTakesTheNewWindowFromTheSessionInUse(t *testing.T) {
 		SevenDay:   &Reading{2, newReset},
 	})
 
-	want := observed(2, newReset)
-	if diff := cmp.Diff(want, state.Windows.SevenDay); diff != "" {
-		t.Fatalf("seven-day mismatch (-want +got):\n%s", diff)
+	want := Windows{FiveHour: observed(1, fiveHourReset), SevenDay: observed(2, newReset)}
+	if diff := cmp.Diff(want, state.Windows); diff != "" {
+		t.Fatalf("windows mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -201,13 +209,13 @@ func TestReduceSettlesWhenTwoDatedPayloadsDisagree(t *testing.T) {
 	beforeChange := at(t, "2026-09-25T07:00:00Z")
 	afterChange := at(t, "2026-09-20T23:00:00Z")
 
-	older := Observation{CapturedAt: captured, FiveHour: &Reading{2, fiveHourReset}, SevenDay: &Reading{7, beforeChange}}
-	newer := Observation{CapturedAt: captured.Add(time.Second), FiveHour: &Reading{5, fiveHourReset}, SevenDay: &Reading{78, afterChange}}
+	behind := Observation{CapturedAt: captured, FiveHour: &Reading{2, fiveHourReset}, SevenDay: &Reading{7, beforeChange}}
+	ahead := Observation{CapturedAt: captured.Add(time.Second), FiveHour: &Reading{5, fiveHourReset}, SevenDay: &Reading{78, afterChange}}
 
-	state := Reduce(NewState(), older)
+	state := Reduce(NewState(), behind)
 	for range 3 {
-		state = Reduce(state, newer)
-		state = Reduce(state, older)
+		state = Reduce(state, ahead)
+		state = Reduce(state, behind)
 	}
 
 	want := Windows{FiveHour: observed(5, fiveHourReset), SevenDay: observed(78, afterChange)}
@@ -226,9 +234,9 @@ func TestReduceTrustsAnyPayloadUntilAFiveHourWindowIsSeen(t *testing.T) {
 
 	state := Reduce(NewState(), Observation{CapturedAt: captured, SevenDay: &Reading{7, sevenReset}})
 
-	want := observed(7, sevenReset)
-	if diff := cmp.Diff(want, state.Windows.SevenDay); diff != "" {
-		t.Fatalf("seven-day mismatch (-want +got):\n%s", diff)
+	want := Windows{FiveHour: Window{Status: WindowUnknown}, SevenDay: observed(7, sevenReset)}
+	if diff := cmp.Diff(want, state.Windows); diff != "" {
+		t.Fatalf("windows mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -248,8 +256,8 @@ func TestReduceHoldsTheWindowWhenTwoPayloadsAreLevel(t *testing.T) {
 
 	state := Reduce(NewState(), held)
 	for range 3 {
-		state = Reduce(state, rival)
 		state = Reduce(state, held)
+		state = Reduce(state, rival)
 	}
 
 	want := Windows{FiveHour: observed(2, fiveHourReset), SevenDay: observed(78, afterChange)}
@@ -271,9 +279,9 @@ func TestReduceWithoutAFiveHourWindowKeepsTheWindowItHolds(t *testing.T) {
 	state := Reduce(NewState(), Observation{CapturedAt: captured, SevenDay: &Reading{7, sevenReset}})
 	state = Reduce(state, Observation{CapturedAt: captured.Add(time.Second), SevenDay: &Reading{78, otherReset}})
 
-	want := observed(7, sevenReset)
-	if diff := cmp.Diff(want, state.Windows.SevenDay); diff != "" {
-		t.Fatalf("seven-day mismatch (-want +got):\n%s", diff)
+	want := Windows{FiveHour: Window{Status: WindowUnknown}, SevenDay: observed(7, sevenReset)}
+	if diff := cmp.Diff(want, state.Windows); diff != "" {
+		t.Fatalf("windows mismatch (-want +got):\n%s", diff)
 	}
 }
 

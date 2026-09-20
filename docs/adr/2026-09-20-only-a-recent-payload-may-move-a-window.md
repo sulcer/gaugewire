@@ -60,8 +60,10 @@ say which payload is current.
 
 Option 5. A five-hour window is at most five hours long, so a payload whose five-hour window has
 not reset yet was taken within the last five hours. That window is also the payload's clock:
-within one five-hour window its usage only rises, and a later reset is a later window, so the
-pair orders payloads by age. The stored five-hour window holds the most recent pair the machine
+within one five-hour window its usage only rises, and a reset later than the one the machine
+holds is a later window once that one has ended, so the pair orders payloads by age. While the
+window the machine holds is still running, a later reset is that window re-anchored under the
+payload, not a payload taken later, and it dates nothing. The stored five-hour window holds the most recent pair the machine
 has seen, and a payload is level with the clock when it matches that pair and past it when it is
 further along.
 
@@ -94,12 +96,15 @@ version, and nothing else from the payload is persisted.
 
 ## Assumptions to verify
 
-The rule rests on four facts about Claude Code that its public documentation does not state, so
+The rule rests on five facts about Claude Code that its public documentation does not state, so
 the [acceptance test](../how-tos/acceptance-test.md) checks each:
 
 - a five-hour window is at most five hours long, which is what bounds a dated payload's age;
 - within one five-hour window the reported usage only rises, which is what orders two payloads
   carrying the same five-hour reset;
+- a five-hour window is not re-anchored while it is running, so two payloads inside one window
+  carry the same reset. The seven-day schedule was re-anchored, which is what this ADR exists for,
+  so the same is assumed possible here and refused rather than trusted;
 - both windows in one payload come from the same response, so a live five-hour window vouches for
   the seven-day window beside it;
 - a subscription that has a weekly limit also has a five-hour one, failing which a machine stays
@@ -114,8 +119,11 @@ the [acceptance test](../how-tos/acceptance-test.md) checks each:
   five-hour pair, so the correction lands on the first tick whose five-hour usage has risen, or
   when that five-hour window resets: within five hours, and within minutes on a machine being
   worked on.
-- A superseded window cannot come back while a dated payload is arriving, and cannot be adopted
-  when the current window ends either, because naming a window still takes a dated payload.
+- A superseded window cannot take a window the machine holds open, because that takes a payload
+  past the clock. Once the window the machine holds has ended, a payload merely level with the
+  clock may name the next one, so a stale session level with the clock can put a superseded window
+  in at that moment. The first payload past the clock corrects it, where round one held the wrong
+  window for days.
 - With nothing in use, a machine keeps the window it holds until that window ends and then reports
   `expired` with no percentage, rather than adopting a window it cannot date. It fills again from
   the first payload of a session in use.
@@ -132,17 +140,18 @@ the [acceptance test](../how-tos/acceptance-test.md) checks each:
 - A machine that has never seen a five-hour window trusts any payload to fill a window it does not
   hold. That is rejected option 3 narrowed to the one case where nothing better exists, and the
   only mode in which a stale session can still name a window.
-- The clock can be frozen by its own content in two cases, each bounded by five hours: a five-hour
-  window re-anchored to an earlier reset dates no later payload, and a five-hour window that has
-  ended leaves an idle machine with nothing to date by. In both the machine keeps the windows it
+- The clock can be frozen by its own content in three cases, each bounded by five hours: a
+  five-hour window re-anchored to an earlier reset dates no later payload, a genuine re-anchor to a
+  later reset is read as a re-anchor and ignored until the window the machine holds ends, and a
+  five-hour window that has ended leaves an idle machine with nothing to date by. In both the machine keeps the windows it
   holds and retires them as their resets pass.
 - The rule reads the local clock to decide what has ended. A clock five hours fast dates no
   payload, so the machine keeps the window it holds and reports `expired` when it ends. The
   five-hour window's own status is where that surfaces: `expired` or `unknown` beside a fresh
   `lastObservedAt`, which `status` and `doctor` both show. `lastObservedAt` alone would not, since
   it records an undated payload too.
-- A machine with no state file reports `unknown` until the first payload that carries a five-hour
-  window, or, on a subscription without one, until any payload at all.
+- A machine with no state file fills each window from the first payload that carries it, five-hour
+  window or not, because a machine that has never seen one has no clock to fall behind.
 - Fixtures with fixed timestamps no longer produce an observation, so the hot-path tests move the
   fixture's two reset timestamps ahead of now, byte for byte.
 - Model-specific weekly limits, which `/usage` shows separately, are not in the payload at all, so
