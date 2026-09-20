@@ -22,6 +22,39 @@ func golden(t *testing.T, name string) string {
 	return string(data)
 }
 
+// TestWindowLineShowsAPercentageAPersonCanRead pins the display against the
+// values Claude Code actually sends: a percentage arrives as a float, and a
+// sum of usage comes through as 7.000000000000001. The stored and published
+// value stays exact; only this line is rounded, to one decimal.
+func TestWindowLineShowsAPercentageAPersonCanRead(t *testing.T) {
+	t.Parallel()
+	zone := time.FixedZone("CEST", 2*60*60)
+	now := time.Date(2026, 9, 17, 16, 32, 0, 0, time.UTC)
+	reset := time.Date(2026, 9, 17, 16, 20, 0, 0, time.UTC) // 18:20 CEST
+
+	cases := []struct {
+		name string
+		used float64
+		want string
+	}{
+		{"floating point noise reads as the whole number", 7.000000000000001, "7%         Reset:  18:20"},
+		{"one decimal is kept", 53.5, "53.5%      Reset:  18:20"},
+		{"a second decimal is rounded away", 41.28, "41.3%      Reset:  18:20"},
+		{"a whole number stays whole", 100, "100%       Reset:  18:20"},
+		{"zero is a real value", 0, "0%         Reset:  18:20"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			used := tc.used
+			got := windowLine(quota.Window{Status: quota.WindowObserved, UsedPercentage: &used, ResetsAt: &reset}, now, zone)
+			if got != tc.want {
+				t.Fatalf("window line mismatch:\nwant %q\ngot  %q", tc.want, got)
+			}
+		})
+	}
+}
+
 func TestRenderStatusObserved(t *testing.T) {
 	t.Parallel()
 	zone := time.FixedZone("CEST", 2*60*60)
