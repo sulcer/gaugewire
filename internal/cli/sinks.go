@@ -13,7 +13,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/sink/databox"
 )
 
-// newDataboxClient builds the client for a sink, defaulting the base URL.
 func newDataboxClient(s config.Sink, key string, httpClient *http.Client) (*databox.Client, error) {
 	base := s.BaseURL
 	if base == "" {

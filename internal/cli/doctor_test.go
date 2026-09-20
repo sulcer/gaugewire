@@ -33,8 +33,7 @@ func doctorGolden(t *testing.T, name, home, workDir string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(g, "<home>", home), "<workDir>", workDir)
 }
 
-// doctorHealthyFixture installs over a "cat" status line and saves a state that
-// passes every row, so a test only has to break the row it is about.
+// doctorHealthyFixture passes every row, so a test only breaks the one it is about.
 func doctorHealthyFixture(t *testing.T) (home, settingsPath string) {
 	t.Helper()
 	home = t.TempDir()
@@ -61,8 +60,6 @@ func doctorHealthyFixture(t *testing.T) (home, settingsPath string) {
 	return home, settingsPath
 }
 
-// doctorIn builds the input runDoctor would build, loading config.json from the
-// fixture home the same way.
 func doctorIn(t *testing.T, home, settingsPath, workDir string, runRenderer func(context.Context, string) error) doctorInput {
 	t.Helper()
 	cfg, cfgErr := config.Load(home)
@@ -216,7 +213,6 @@ func doctorSinkFixture(t *testing.T, f *fakeDatabox) (home, settingsPath, workDi
 	return home, settingsPath, workDir
 }
 
-// doctorSinkIn is the input diagnose gets for a fixture built by doctorSinkFixture.
 func doctorSinkIn(t *testing.T, f *fakeDatabox, home, settingsPath, workDir string) doctorInput {
 	t.Helper()
 	in := doctorIn(t, home, settingsPath, workDir, func(context.Context, string) error { return nil })
@@ -309,9 +305,8 @@ func TestDoctorReportsNoIngestionYet(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsAMissingKey exercises every sink row through the same
-// unresolved key, so all three must read ErrNoAPIKey's text unwrapped rather
-// than wrapped a second time.
+// All three rows go through the same unresolved key, so each must read
+// ErrNoAPIKey's text unwrapped rather than wrapped a second time.
 func TestDoctorReportsAMissingKey(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
@@ -369,9 +364,8 @@ func TestDoctorReportsAKeyFileWarningOnAValidKey(t *testing.T) {
 	}
 }
 
-// TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid writes a config.json
-// that fails validation past config.Save, which would refuse it. Its sink is
-// still decoded, but doctor must not act on a configuration it rejected.
+// The config.json is written past config.Save, which would refuse it: its sink
+// still decodes, but doctor must not act on a configuration it rejected.
 func TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
@@ -430,9 +424,7 @@ func TestDoctorSkipsADisabledSink(t *testing.T) {
 	}
 }
 
-// TestDoctorReportsUnconfiguredIDs blanks out the data source id and the
-// history dataset id: both must be answered without a request, since an id
-// that is not configured cannot be looked up.
+// Both blanked ids must be answered without a request.
 func TestDoctorReportsUnconfiguredIDs(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)

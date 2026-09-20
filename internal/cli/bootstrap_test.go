@@ -83,7 +83,6 @@ func (f *fakeDatabox) seen() []string {
 	return append([]string(nil), f.calls...)
 }
 
-// bodies returns the request bodies sent to "METHOD /path", in arrival order.
 func (f *fakeDatabox) bodies(key string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -308,8 +307,7 @@ func TestBootstrapRecordsTheKeyFilePath(t *testing.T) {
 	}
 }
 
-// observedHome is a fresh home whose state holds both windows observed, as it
-// is once Claude Code has shown its status line.
+// observedHome holds both windows observed, as after Claude Code's status line.
 func observedHome(t *testing.T) string {
 	t.Helper()
 	home := freshHome(t)
@@ -326,7 +324,6 @@ func observedHome(t *testing.T) string {
 	return home
 }
 
-// eventTypes lists the event_type of every record in the given ingestion bodies.
 func eventTypes(t *testing.T, bodies []string) []string {
 	t.Helper()
 	var types []string
@@ -409,10 +406,8 @@ func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
 	}
 }
 
-// TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun makes the home
-// directory read-only after seeding a record from an earlier run: state.json
-// still loads, but the sink's save fails, so the read-back finds the old
-// record and must not report it as this send's.
+// The read-only home lets state.json load but fails the sink's save, so the
+// read-back finds the record an earlier run left.
 func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("directory modes are not meaningful on Windows")

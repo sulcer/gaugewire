@@ -8,9 +8,8 @@ import (
 )
 
 // resolveSettingsPath makes a settings path absolute and follows symlinks, so a
-// dotfiles-managed settings file is edited in place and its backup lands next to
-// the real file. A file that does not exist yet resolves through its parent
-// directory instead, so the recorded path is the real one from the first install.
+// dotfiles-managed file is edited in place and its backup lands beside it. A
+// file that does not exist yet resolves through its parent directory.
 func resolveSettingsPath(path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {

@@ -21,7 +21,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
-// buildBinary compiles the command into a temporary directory and returns its path.
 func buildBinary(t *testing.T, ldflags string) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "gaugewire")
@@ -105,10 +104,8 @@ func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 	return home
 }
 
-// openPayload is the full fixture with its two reset timestamps moved ahead of
-// now, replaced byte for byte so the rest of the payload keeps its formatting:
-// the binary reads the real clock, and the reducer refuses a reading whose
-// window has ended.
+// openPayload moves the fixture's two resets ahead of now: the binary reads the
+// real clock, and the reducer refuses a reading whose window has ended.
 func openPayload(t *testing.T) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
@@ -150,9 +147,8 @@ func TestStatuslineEndToEnd(t *testing.T) {
 	waitForFlushRuns(t, home, 1)
 }
 
-// waitForFlushRuns polls the log until it holds exactly want "flush finished"
-// records, one per detached flusher process, so a caller's later cleanup does
-// not race a flusher still writing to the home directory.
+// waitForFlushRuns polls the log for want "flush finished" records, one per
+// detached flusher, so cleanup does not race a flusher still writing.
 func waitForFlushRuns(t *testing.T, home string, want int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -168,7 +164,6 @@ func waitForFlushRuns(t *testing.T, home string, want int) {
 	t.Fatalf("the log holds %d flush runs, want %d", count, want)
 }
 
-// gaugewire runs the built binary against home and returns its stdout.
 func gaugewire(t *testing.T, binary, home string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, args...)
@@ -227,8 +222,7 @@ func TestDoctorExitsOneWhenUnhealthy(t *testing.T) {
 func TestParallelStatuslinesPublishOnce(t *testing.T) {
 	t.Parallel()
 	binary := buildBinary(t, "")
-	// No sink is enabled, so nothing is spooled and no flusher is spawned: the
-	// test observes the state lock alone, with nothing left running at cleanup.
+	// No sink is enabled, so the test observes the state lock alone.
 	home := integrationHome(t, "", "[]")
 	payload := openPayload(t)
 	const sessions = 8

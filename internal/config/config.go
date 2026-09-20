@@ -23,8 +23,7 @@ const SchemaVersion = 1
 // SinkTypeDatabox is the only sink type v1 knows.
 const SinkTypeDatabox = "databox"
 
-// DefaultAPIKeyEnv is the environment variable a sink reads its key from when
-// no key file is configured.
+// DefaultAPIKeyEnv is the variable a sink reads its key from without a key file.
 const DefaultAPIKeyEnv = "DATABOX_API_KEY" //nolint:gosec // names an env var, not a credential value
 
 // ErrMissing means config.json does not exist; install creates it.

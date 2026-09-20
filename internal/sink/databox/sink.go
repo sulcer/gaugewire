@@ -38,11 +38,9 @@ func (s *Sink) ID() string { return s.id }
 
 // PublishBatch writes every delivery to History, then the newest snapshot to
 // Current unless Current already holds something newer, and records the
-// ingestion ids. Both accepts are the acknowledgement; any failure is
-// returned classified so the flusher retries or dead-letters the whole chunk.
-// The record is read before anything is posted: without it the Current guard
-// cannot be applied, and failing then costs nothing, since History is an
-// upsert that a retry simply resends.
+// ingestion ids. The record is read before anything is posted, because without
+// it the Current guard cannot be applied; History is an upsert, so a retry of
+// the whole chunk costs nothing.
 func (s *Sink) PublishBatch(ctx context.Context, deliveries []sink.Delivery) error {
 	if len(deliveries) == 0 {
 		return nil

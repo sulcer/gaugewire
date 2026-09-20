@@ -15,11 +15,10 @@ const FileName = "gaugewire.log"
 
 const rotateAt = 1 << 20
 
-// Open returns a JSON logger appending to logs/gaugewire.log, rotating the
-// previous file to .1 when it has reached one MiB, plus a function that closes
-// the file. A second Open while the first file is still open may rotate it
-// from under that writer; its later lines then land in the .1 file, which is
-// acceptable for short-lived processes.
+// Open returns a JSON logger appending to logs/gaugewire.log, rotating it to .1
+// at one MiB, plus a close function. A second Open may rotate the file from
+// under the first writer, whose later lines then land in .1: these processes are
+// short-lived.
 func Open(home string) (*slog.Logger, func() error, error) {
 	dir := filepath.Join(home, store.LogsDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
