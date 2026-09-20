@@ -6,7 +6,7 @@ decision-date: 2026-09-17
 
 # Claude Code's status-line JSON is the only quota source
 
-Amended by: 2026-09-20-the-open-window-that-resets-soonest-is-current.md (the per-window staleness guard)
+Amended by: 2026-09-20-only-a-recent-payload-may-move-a-window.md (the per-window staleness guard)
 
 ## Members
 

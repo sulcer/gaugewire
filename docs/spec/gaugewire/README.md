@@ -86,7 +86,7 @@ status line. None of these are added opportunistically.
 - Is usage monotonic within one reset window? Consistent with a measurement across eight
   sessions, where the highest of six readings of one window matched `/usage`; the acceptance
   test confirms it over a full window. How often a window's schedule changes is open:
-  [ADR](../../adr/2026-09-20-the-open-window-that-resets-soonest-is-current.md).
+  [ADR](../../adr/2026-09-20-only-a-recent-payload-may-move-a-window.md).
 - Are column types inferred from the first ingestion? Dataset creation does not document a
   schema field; the sink sends typed-looking values either way, and the acceptance test settles
   it.

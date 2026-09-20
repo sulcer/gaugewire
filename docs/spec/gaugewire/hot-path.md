@@ -43,9 +43,10 @@ flowchart TD
   waiting until the child exits.
 - On Windows the command runs through Git Bash when installed, else PowerShell.
 - **Every open session runs the command, with the rate limits that session last received.**
-  Measured with eight sessions at a five second `refreshInterval`: about 1.6 runs a second,
-  each carrying its own view of the windows, and only the session in use reporting the
-  five-hour window at all. The [reducer](reducer-and-dedupe.md) reconciles them.
+  Measured with eight sessions at a five second `refreshInterval`: 106 runs in 25 seconds,
+  about four a second, since sessions also run it on their own triggers. Each carried its own
+  view of the windows, and only the session in use carried the five-hour window at all. The
+  [reducer](reducer-and-dedupe.md) reconciles them.
 
 ## Rules
 

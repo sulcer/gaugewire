@@ -15,16 +15,20 @@ type Observation struct {
 // the result. Each window is reduced independently.
 func Reduce(state State, obs Observation) State {
 	state.SchemaVersion = SchemaVersion
-	state.Windows.FiveHour = reduceWindow(state.Windows.FiveHour, obs.FiveHour, obs.CapturedAt)
-	state.Windows.SevenDay = reduceWindow(state.Windows.SevenDay, obs.SevenDay, obs.CapturedAt)
+	// A five-hour window is five hours long, so a payload whose five-hour
+	// window has not reset yet was taken within the last five hours. That is
+	// what makes it recent enough to move a window's reset, its own included.
+	recent := obs.FiveHour != nil && obs.FiveHour.ResetsAt.After(obs.CapturedAt)
+	state.Windows.FiveHour = reduceWindow(state.Windows.FiveHour, obs.FiveHour, obs.CapturedAt, recent)
+	state.Windows.SevenDay = reduceWindow(state.Windows.SevenDay, obs.SevenDay, obs.CapturedAt, recent)
 	captured := obs.CapturedAt
 	state.LastObservedAt = &captured
 	state.ClaudeCodeVersion = obs.ClaudeCodeVersion
 	return state
 }
 
-func reduceWindow(stored Window, incoming *Reading, now time.Time) Window {
-	if incoming != nil && accepts(stored, *incoming, now) {
+func reduceWindow(stored Window, incoming *Reading, now time.Time, recent bool) Window {
+	if incoming != nil && accepts(stored, *incoming, now, recent) {
 		used := incoming.UsedPercentage
 		resetsAt := incoming.ResetsAt
 		return Window{Status: WindowObserved, UsedPercentage: &used, ResetsAt: &resetsAt}
@@ -47,13 +51,17 @@ func age(stored Window, now time.Time) Window {
 
 // accepts is the staleness guard. Every open Claude Code session runs the
 // status line with the rate limits it last received, so one machine sees many
-// readings of one window and, after the subscription's schedule changes,
-// readings of a window that no longer applies. A reading counts when it
-// describes the window open now: its reset is still ahead, and among open
-// windows the one resetting soonest is the current one, because a later reset
-// can only come from a session whose values predate the change. Usage rises
-// within a window, so among readings of one window the highest value wins.
-func accepts(stored Window, incoming Reading, now time.Time) bool {
+// readings of one window, and after the subscription's window schedule changes
+// it also sees readings of a window that no longer applies.
+//
+// A reading whose reset has passed describes a window that has ended and says
+// nothing about the one open now. Windows partition time, so under one
+// schedule every payload that still has time on the clock names the same
+// reset: two open resets mean two schedules, and only a payload from the last
+// five hours can say which one holds. Usage rises within a window, so among
+// readings of one window the highest value is the current one and a session
+// behind the others cannot pull it back.
+func accepts(stored Window, incoming Reading, now time.Time, recent bool) bool {
 	if !incoming.ResetsAt.After(now) {
 		return false
 	}
@@ -66,5 +74,5 @@ func accepts(stored Window, incoming Reading, now time.Time) bool {
 	if incoming.ResetsAt.Equal(*stored.ResetsAt) {
 		return incoming.UsedPercentage >= *stored.UsedPercentage
 	}
-	return incoming.ResetsAt.Before(*stored.ResetsAt)
+	return recent
 }

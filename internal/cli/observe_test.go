@@ -1,10 +1,11 @@
 package cli
 
 import (
-	"encoding/json"
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -25,32 +26,23 @@ func fixture(t *testing.T, name string) []byte {
 	return data
 }
 
-// openPayload is a fixture payload whose windows are still open when the test
-// runs. The reducer refuses a reading whose reset has passed, and the hot path
-// reads the real clock, so a fixture's fixed timestamps would observe nothing.
+// openPayload is a fixture payload with its two reset timestamps moved ahead of
+// now, replaced byte for byte so the rest of the fixture keeps its own
+// formatting: the hot path reads the real clock, and the reducer refuses a
+// reading whose window has ended.
 func openPayload(t *testing.T, name string) []byte {
 	t.Helper()
-	var doc map[string]any
-	if err := json.Unmarshal(fixture(t, name), &doc); err != nil {
-		t.Fatalf("decode fixture: %v", err)
+	return withOpenWindows(fixture(t, name))
+}
+
+// withOpenWindows rewrites the fixture's five-hour and seven-day reset
+// timestamps, leaving every other byte as it was.
+func withOpenWindows(raw []byte) []byte {
+	ahead := func(d time.Duration) []byte {
+		return []byte(strconv.FormatInt(time.Now().Add(d).Unix(), 10))
 	}
-	limits, ok := doc["rate_limits"].(map[string]any)
-	if !ok {
-		t.Fatalf("fixture %s carries no rate_limits", name)
-	}
-	ahead := map[string]time.Duration{"five_hour": time.Hour, "seven_day": 25 * time.Hour}
-	for window, d := range ahead {
-		w, found := limits[window].(map[string]any)
-		if !found {
-			continue
-		}
-		w["resets_at"] = time.Now().Add(d).Unix()
-	}
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatalf("encode payload: %v", err)
-	}
-	return raw
+	raw = bytes.ReplaceAll(raw, []byte("1789659600"), ahead(time.Hour))
+	return bytes.ReplaceAll(raw, []byte("1789714800"), ahead(25*time.Hour))
 }
 
 func testConfig(sinks ...config.Sink) config.Config {

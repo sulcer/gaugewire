@@ -105,35 +105,21 @@ func integrationHome(t *testing.T, rendererCommand, sinks string) string {
 	return home
 }
 
-// openPayload is the full fixture with its windows still open when the test
-// runs: the reducer refuses a reading whose reset has passed, and the binary
-// reads the real clock.
+// openPayload is the full fixture with its two reset timestamps moved ahead of
+// now, replaced byte for byte so the rest of the payload keeps its formatting:
+// the binary reads the real clock, and the reducer refuses a reading whose
+// window has ended.
 func openPayload(t *testing.T) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "fixtures", "statusline", "full.json"))
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatalf("decode fixture: %v", err)
+	ahead := func(d time.Duration) []byte {
+		return []byte(strconv.FormatInt(time.Now().Add(d).Unix(), 10))
 	}
-	limits, ok := doc["rate_limits"].(map[string]any)
-	if !ok {
-		t.Fatalf("fixture carries no rate_limits")
-	}
-	for window, d := range map[string]time.Duration{"five_hour": time.Hour, "seven_day": 25 * time.Hour} {
-		w, found := limits[window].(map[string]any)
-		if !found {
-			continue
-		}
-		w["resets_at"] = time.Now().Add(d).Unix()
-	}
-	out, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatalf("encode payload: %v", err)
-	}
-	return out
+	raw = bytes.ReplaceAll(raw, []byte("1789659600"), ahead(time.Hour))
+	return bytes.ReplaceAll(raw, []byte("1789714800"), ahead(25*time.Hour))
 }
 
 func statuslineOnce(t *testing.T, binary, home string, payload []byte) (string, error) {

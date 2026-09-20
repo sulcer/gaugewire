@@ -7,8 +7,9 @@ Status: Draft · Built · 2026-09-20 · How one observation becomes machine stat
 Each window is reduced independently through a three-state machine. A missing window is never
 zero. Every open Claude Code session runs the status line with the rate limits it last received,
 so one machine sees many readings of one window, and after a schedule change readings of a
-window that no longer applies. A window is identified by its reset time; the window open now is
-the one resetting soonest among those still ahead, and within it usage only rises. Publishing
+window that no longer applies. A window is identified by its reset time; a reading of a window that
+has ended says nothing, only a payload from the last five hours may name a different window,
+and within one window usage only rises. Publishing
 is decided against the last published snapshot, not the previous input, so small drifts
 accumulate until they cross the threshold.
 
@@ -17,12 +18,14 @@ accumulate until they cross the threshold.
 ```mermaid
 stateDiagram-v2
     [*] --> unknown
-    unknown --> observed: reading with resetsAt > now
-    observed --> observed: sooner open resetsAt, or same resetsAt and used ≥ stored
+    unknown --> observed: open reading
+    observed --> observed: same resetsAt and used ≥ stored
+    observed --> observed: different resetsAt from a payload of the last five hours
+    observed --> observed: stored resetsAt ≤ now, any open reading (the window reset)
     observed --> observed: reading refused or absent, stored resetsAt > now (keep)
     observed --> expired: reading refused or absent, stored resetsAt ≤ now
-    expired --> observed: reading with resetsAt > now
-    unknown --> unknown: absent, or every reading already reset
+    expired --> observed: open reading
+    unknown --> unknown: absent, or every reading already ended
 ```
 
 ## Validation
@@ -43,8 +46,8 @@ rendering continues.
 | present, open | `observed`, stored `resetsAt ≤ now` | accept: the stored window has ended |
 | present, open | `observed`, same `resetsAt`, incoming `used ≥ stored` | accept |
 | present, open | `observed`, same `resetsAt`, incoming `used < stored` | ignore (a session behind the others) |
-| present, open | `observed`, incoming `resetsAt` sooner | accept: the current window |
-| present, open | `observed`, incoming `resetsAt` later | ignore: a superseded schedule |
+| present, open | `observed`, different `resetsAt`, payload of the last five hours | accept: the current window |
+| present, open | `observed`, different `resetsAt`, older payload | ignore: a superseded schedule |
 | absent, or ignored | `unknown` | stay `unknown` |
 | absent, or ignored | stored `resetsAt > now` | keep stored |
 | absent, or ignored | stored `resetsAt ≤ now` | `expired`, `usedPercentage = null`, keep `resetsAt` |
@@ -55,16 +58,21 @@ reset, one per session's cache, and the highest matched what Claude Code's `/usa
 Two further sessions carried a different reset, four days later, at 7 and 1 per cent: the
 schedule of the weekly window had changed and those sessions predated it. Taking the reading
 with the furthest reset locked the machine onto the superseded window, and every correct reading
-was then refused until that reset passed. Taking the soonest open reset instead names the
-current window at once, and a session left behind by a real reset is refused because its window
-has ended. Within one window usage only rises, so the highest value is the truth and a session
-behind the others never flaps the state. Decision:
-[ADR](../../adr/2026-09-20-the-open-window-that-resets-soonest-is-current.md).
+was then refused until that reset passed. Reset order alone cannot settle it: taking the
+soonest open reset is right until the current window ends, and then the superseded window,
+which still has days left, becomes the soonest and captures the machine again.
 
-A schedule change in the other direction, to a later reset, is followed only when the stored
-window ends, because until then the stored window is the one resetting sooner. It corrects
-itself at that reset without losing an event, since every published snapshot carries the window
-it described.
+What settles it is the five-hour window. It is five hours long, so a payload whose five-hour
+window has not reset yet was taken within the last five hours. Windows partition time, so
+under one schedule every payload with time left names the same reset: two open resets mean
+two schedules, and the recent payload is the one that knows which holds. In the measurement
+only the session in use carried a five-hour window at all. Within one window usage only rises,
+so the highest value is the truth whatever the payload's age, and a session behind the others
+never flaps the state. Decision:
+[ADR](../../adr/2026-09-20-only-a-recent-payload-may-move-a-window.md).
+
+`lastObservedAt` records that a payload arrived, including one whose readings were all
+refused, so a fresh observation time can sit above a window that is `expired`.
 
 Expiry is derived from the stored reset time. Claude Code appeared to drop a window once its
 reset passed, but the reducer no longer depends on that: a reading whose reset has passed is
@@ -94,5 +102,6 @@ Defaults: `minDeltaPercentage: 1.0`, `heartbeatInterval: 30m`. Example against a
 
 - Monotonic usage within a window: consistent with the measurement above, where the highest of
   six readings of one window matched `/usage`. The acceptance test confirms it over a full window.
-- How often the subscription's window schedule changes, and whether a change can ever move a
-  reset later. The rule follows a later reset only when the stored window ends.
+- How often the subscription's window schedule changes. A change is followed as soon as one
+  session in use reports it; while every session on the machine has been idle for more than
+  five hours, the machine keeps the window it holds until that window ends.
