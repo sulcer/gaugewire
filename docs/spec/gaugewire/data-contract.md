@@ -83,7 +83,7 @@ older or missing versions skip observation and `doctor` reports it.
     {
       "id": "databox-main", "type": "databox", "enabled": true,
       "baseUrl": "https://api.databox.com",
-      "dataSourceId": 4754489,
+      "accountId": 123456, "dataSourceId": 4754489,
       "currentDatasetId": 902, "historyDatasetId": 901,
       "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" }
     }

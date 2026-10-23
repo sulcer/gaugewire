@@ -78,8 +78,9 @@ func classOf(status int) (sink.Class, string) {
 	}
 }
 
-// classOfCode retries the documented codes that name a transient condition;
-// any other code names something a resend cannot fix.
+// classOfCode retries the documented codes that name a transient condition,
+// and invalid_response, the name classOf gives a 2xx error without a code; any
+// other code names something a resend cannot fix.
 func classOfCode(code string) sink.Class {
 	switch code {
 	case "rate_limited", "internal_error", "service_unavailable", "processing_failed", "invalid_response":
