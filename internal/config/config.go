@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 	"uuid"
 
@@ -51,15 +52,23 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// DatasetID is a dataset's integer id. A string, which is what a v1
-// configuration holds, decodes as zero, unset, so config.json still loads and
-// bootstrap can replace it.
+// DatasetID is a dataset's integer id. A non-numeric string, which is what a
+// v1 configuration holds, decodes as zero, unset, so config.json still loads
+// and bootstrap can replace it.
 type DatasetID int64
 
-// UnmarshalJSON reads a number, or a leftover string as unset.
+// UnmarshalJSON reads a number, a number in quotes, or a leftover UUID as unset.
 func (d *DatasetID) UnmarshalJSON(data []byte) error {
 	if len(data) > 0 && data[0] == '"' {
-		*d = 0
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return fmt.Errorf("dataset id: %w", err)
+		}
+		id, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			id = 0
+		}
+		*d = DatasetID(id)
 		return nil
 	}
 	var id int64

@@ -33,6 +33,8 @@ func TestClassify(t *testing.T) {
 		"500":                    {500, ``, classified{sink.Retryable, "server_error"}},
 		"503 with envelope":      {503, `{"errors":[{"code":"service_unavailable","message":"later"}]}`, classified{sink.Retryable, "service_unavailable"}},
 		"418 other 4xx":          {418, ``, classified{sink.Permanent, "invalid_request"}},
+		"200 error with a code":  {200, envelope, classified{sink.Permanent, "schema_mismatch"}},
+		"200 error without code": {200, `{"status":"error","errors":[{"code":null,"message":"later"}]}`, classified{sink.Retryable, "invalid_response"}},
 	}
 	got := map[string]classified{}
 	want := map[string]classified{}

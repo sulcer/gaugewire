@@ -58,11 +58,12 @@ Bootstrap reads `GET /v2/organization` instead of choosing among listed accounts
 `--base-url` it is recorded on every run, so a run without it acts on the organization itself.
 Datasets are created with an explicit schema typed by the rule the spec already stated:
 `*_at` columns are `datetime`, `*_used_percentage` columns are `number`, and every other
-column is a `string`.
+column is a `string`. When bootstrap changes a dataset id it resets the sink's ingestion
+record, whose ids belong to the datasets replaced.
 
 An error inside a 2xx body is classed by its code: `rate_limited`, `internal_error`,
-`service_unavailable` and `processing_failed` are retried, and every other code is permanent.
-404 is `not_found` and 413 is `request_too_large`, both permanent.
+`service_unavailable` and `processing_failed` are retried, every other code is permanent, and
+an error with no code is a malformed response and retried. 404 is `not_found` and 413 is `request_too_large`, both permanent.
 
 `doctor` keeps judging an ingestion by its rejected count, now
 `summary.ingestion.rejectedRecordCount`, and shows the first entry of `errors` beside it.

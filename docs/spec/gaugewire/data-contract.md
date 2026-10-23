@@ -95,8 +95,8 @@ older or missing versions skip observation and `doctor` reports it.
   sets it in canonical lowercase, otherwise install keeps the saved id or generates one.
 - A Databox sink's ids are written by `databox bootstrap`. `accountId` is present only when
   bootstrap was given `--account-id`, and is then sent as `x-account-id`. Dataset ids are
-  integers; a string there, as a v1 configuration holds, reads as unset until bootstrap runs
-  again.
+  integers. A number in quotes reads as that number; any other string, such as the UUID a v1
+  configuration holds, reads as unset until bootstrap runs again.
 - An empty or absent `renderer.command` means no renderer: Gaugewire prints nothing.
 - `install.originalStatusLine` is kept as raw JSON so uninstall restores the same object; it is
   the original object JSON-equal to what install found, not its original source bytes, and it is

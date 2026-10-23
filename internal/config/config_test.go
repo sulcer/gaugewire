@@ -222,3 +222,13 @@ func TestLoadReadsAStringDatasetIDAsUnset(t *testing.T) {
 		t.Fatalf("err %v, mismatch (-want +got):\n%s", err, diff)
 	}
 }
+
+func TestLoadReadsANumericStringDatasetIDAsTheNumber(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	writeConfig(t, home, strings.Replace(specExample, `"historyDatasetId": 901`, `"historyDatasetId": "901"`, 1))
+	got, err := Load(home)
+	if diff := cmp.Diff(specConfig(), got); err != nil || diff != "" {
+		t.Fatalf("err %v, mismatch (-want +got):\n%s", err, diff)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -155,6 +156,61 @@ func TestListsReadEveryPage(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(outcome{})); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Without totalItems only a short page ends the walk, so a full page is
+// followed by a request for the next one.
+func TestAListWithoutPaginationReadsOnUntilAShortPage(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	items := make([]string, 0, pageSize)
+	want := make([]DataSource, 0, pageSize)
+	for i := range pageSize {
+		items = append(items, fmt.Sprintf(`{"id":%d,"name":"s%d"}`, i+1, i+1))
+		want = append(want, DataSource{ID: int64(i + 1), Name: fmt.Sprintf("s%d", i+1)})
+	}
+	f.on("GET", "/v2/data-sources", 200, `{"requestId":"r","status":"success","data":{"items":[`+strings.Join(items, ",")+`]}}`)
+	f.on("GET", "/v2/data-sources", 200, `{"requestId":"r","status":"success","data":{"items":[]}}`)
+	listed, err := client(t, f).DataSources(t.Context())
+	type outcome struct {
+		listed []DataSource
+		err    bool
+		calls  int
+	}
+	got := outcome{listed, err != nil, len(f.seen())}
+	if diff := cmp.Diff(outcome{want, false, 2}, got, cmp.AllowUnexported(outcome{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A server that ignores page keeps serving the first one; the walk gives up
+// after maxPages requests instead of reading forever.
+func TestAListThatNeverEndsFailsAfterMaxPages(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("GET", "/v2/data-sources", 200, `{"requestId":"r","status":"success","data":{"items":[{"id":1,"name":"Same"}],"pagination":{"page":0,"pageSize":100,"totalItems":250}}}`)
+	_, err := client(t, f).DataSources(t.Context())
+	class, code := sink.Classify(err)
+	type outcome struct {
+		failed bool
+		class  sink.Class
+		code   string
+		calls  int
+	}
+	got := outcome{err != nil, class, code, len(f.seen())}
+	if want := (outcome{true, sink.Retryable, "invalid_response", maxPages}); got != want {
+		t.Fatalf("got %+v err %v, want %+v", got, err, want)
+	}
+}
+
+// An endpoint read for its status alone succeeds whatever its body holds.
+func TestValidateKeyAcceptsAnEmptySuccessBody(t *testing.T) {
+	t.Parallel()
+	f := newFake(t)
+	f.on("GET", "/v2/auth/validate-key", 200, ``)
+	if err := client(t, f).ValidateKey(t.Context()); err != nil {
+		t.Fatalf("err %v, want nil", err)
 	}
 }
 

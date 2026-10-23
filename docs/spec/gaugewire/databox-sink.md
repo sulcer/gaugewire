@@ -145,10 +145,13 @@ maps the API onto them:
   `request_too_large` (413), `rate_limited` (429), `server_error` (5xx) or `invalid_request`
   (other 4xx).
 - A 2xx whose body says `"status":"error"` is classed by its first `code`: `rate_limited`,
-  `internal_error`, `service_unavailable` and `processing_failed` are retryable, and any other
-  code is permanent.
+  `internal_error`, `service_unavailable` and `processing_failed` are retryable, any other code
+  is permanent, and no code at all is retryable `invalid_response`.
 - A 2xx whose body or `data` does not decode, or an ingestion response without `ingestionId`,
-  is retryable `invalid_response`.
+  is retryable `invalid_response`; key validation, which reads no payload, ignores its body.
+- A list is read page by page, 100 items a page, until `totalItems` is reached or, without it,
+  until a page comes back short. A list still going after 100 pages is retryable
+  `invalid_response`.
 - A redirect is never followed and is permanent `redirect`.
 - More than 100 records in one ingestion is permanent `too_many_records`, before any request.
 - A base URL that is not `https`, other than plain `http` to `localhost` or a loopback address,
@@ -192,7 +195,10 @@ Every run re-resolves the data source and the two datasets by name against the o
 current lists — an id already in config.json is never trusted, only overwritten — so a name
 match is reused and only a missing one is created; repeated runs create nothing new. A dataset
 id left by a v1 `config.json` is a UUID string; it reads as unset, so the sink refuses to build
-and its events stay spooled until bootstrap writes the integer ids.
+and its events stay spooled until bootstrap writes the integer ids. When either dataset id
+changes, bootstrap also resets the sink's ingestion record in `state.json`, since its ingestion
+ids and `currentCapturedAt` belong to the datasets it replaces. `doctor` reports a sink with
+both dataset ids unset as `dataset ids not configured; run gaugewire databox bootstrap`.
 `--base-url` defaults to the public host and overwrites a configured `baseUrl` on every run; the
 flag exists so a test can point bootstrap at `httptest`, not to repoint a fleet machine at a
 different real host. `--account-id` acts on one account of the key's organization: it is sent

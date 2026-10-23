@@ -492,6 +492,71 @@ func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
 	}
 }
 
+// homeWithRecord holds a sink whose dataset ids are history and current and
+// the ingestion record a flush to them left.
+func homeWithRecord(t *testing.T, history, current config.DatasetID) string {
+	t.Helper()
+	home := observedHome(t)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks = []config.Sink{{
+		ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true,
+		DataSourceID: 4754489, HistoryDatasetID: history, CurrentDatasetID: current,
+		Credentials: config.Credentials{APIKeyEnv: config.DefaultAPIKeyEnv},
+	}}
+	if saveErr := config.Save(home, cfg); saveErr != nil {
+		t.Fatalf("save: %v", saveErr)
+	}
+	state, err := store.LoadState(home)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	state.LastIngestion = map[string]store.IngestionRecord{"databox-main": oldRecord}
+	if saveErr := store.SaveState(home, state); saveErr != nil {
+		t.Fatalf("save state: %v", saveErr)
+	}
+	return home
+}
+
+var oldRecord = store.IngestionRecord{Current: "ing-c-old", History: "ing-h-old", At: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+
+func TestBootstrapResetsTheIngestionRecordWhenTheDatasetsChange(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name             string
+		history, current config.DatasetID
+		want             store.IngestionRecord
+	}{
+		{name: "upgraded from v1", history: 0, current: 0, want: store.IngestionRecord{}},
+		{name: "same datasets", history: 901, current: 902, want: oldRecord},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFakeDatabox(t)
+			f.on("GET /v2/auth/validate-key", validKey)
+			f.on("GET /v2/organization", organization)
+			f.on("GET /v2/data-sources", oneDataSource)
+			f.on("GET /v2/datasets", bothDatasets)
+			home := homeWithRecord(t, tc.history, tc.current)
+			err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
+			state, _ := store.LoadState(home)
+			got := struct {
+				err bool
+				rec store.IngestionRecord
+			}{err != nil, state.LastIngestion["databox-main"]}
+			want := struct {
+				err bool
+				rec store.IngestionRecord
+			}{false, tc.want}
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+				t.Fatalf("mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestBootstrapRefusesACreatedResourceWithoutAnID(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

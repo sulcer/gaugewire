@@ -114,6 +114,14 @@ func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout, 
 		return err
 	}
 	fmt.Fprintf(stdout, "current dataset:  %d %s\n", current.ID, createdOrReused(currentCreated))
+	// An ingestion record names ingestions of the datasets it was written for;
+	// against new ones doctor would look them up in the wrong dataset and the
+	// Current guard would compare against a capture the new Current never got.
+	if entry.HistoryDatasetID != config.DatasetID(history.ID) || entry.CurrentDatasetID != config.DatasetID(current.ID) {
+		if err = (sink.StateIngestions{Home: home}).SaveIngestion(ctx, entry.ID, sink.Ingestion{}); err != nil {
+			return fmt.Errorf("reset ingestion record: %w", err)
+		}
+	}
 	entry.Type = config.SinkTypeDatabox
 	entry.Enabled = true
 	entry.BaseURL = opts.baseURL

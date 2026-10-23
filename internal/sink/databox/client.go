@@ -214,14 +214,21 @@ func datasetPath(id int64) string {
 	return "/v2/datasets/" + strconv.FormatInt(id, 10)
 }
 
-// list reads every page of a list endpoint. Pages are 0-indexed and hold at
-// most 100 items; an empty page also ends the walk, so a wrong totalItems
-// cannot loop forever.
+// pageSize is the documented maximum, and maxPages bounds a walk whose server
+// ignores page: bootstrap would otherwise read the same page forever.
+const (
+	pageSize = 100
+	maxPages = 100
+)
+
+// list reads every page of a list endpoint. Pages are 0-indexed. totalItems
+// ends the walk when the response carries it, since a server may serve fewer
+// items per page than asked; without it, a short page is the last one.
 func list[T any](ctx context.Context, c *Client, path string, query url.Values) ([]T, error) {
 	var all []T
-	for page := 0; ; page++ {
+	for page := range maxPages {
 		query.Set("page", strconv.Itoa(page))
-		query.Set("pageSize", "100")
+		query.Set("pageSize", strconv.Itoa(pageSize))
 		var out struct {
 			Items      []T `json:"items"`
 			Pagination struct {
@@ -232,10 +239,16 @@ func list[T any](ctx context.Context, c *Client, path string, query url.Values) 
 			return nil, err
 		}
 		all = append(all, out.Items...)
-		if len(out.Items) == 0 || len(all) >= out.Pagination.TotalItems {
+		total := out.Pagination.TotalItems
+		done := len(out.Items) < pageSize
+		if total > 0 {
+			done = len(all) >= total || len(out.Items) == 0
+		}
+		if done {
 			return all, nil
 		}
 	}
+	return nil, sink.NewRetryable("invalid_response", fmt.Errorf("databox: %s did not end within %d pages", path, maxPages))
 }
 
 // do sends one request with the documented headers and a request timeout,
@@ -280,6 +293,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
+		if out == nil {
+			return nil
+		}
 		return sink.NewRetryable("invalid_response", fmt.Errorf("databox: decode response: %w", err))
 	}
 	// The API documents error codes arriving in a 2xx body too.

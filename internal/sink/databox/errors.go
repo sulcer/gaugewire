@@ -56,6 +56,9 @@ func classify(status int, body []byte) error {
 
 func classOf(status int) (sink.Class, string) {
 	switch {
+	case status < 400:
+		// An error inside a 2xx that carries no code is a malformed response.
+		return sink.Retryable, "invalid_response"
 	case status == http.StatusUnauthorized:
 		return sink.Permanent, "invalid_api_key"
 	case status == http.StatusForbidden:
@@ -79,7 +82,7 @@ func classOf(status int) (sink.Class, string) {
 // any other code names something a resend cannot fix.
 func classOfCode(code string) sink.Class {
 	switch code {
-	case "rate_limited", "internal_error", "service_unavailable", "processing_failed":
+	case "rate_limited", "internal_error", "service_unavailable", "processing_failed", "invalid_response":
 		return sink.Retryable
 	default:
 		return sink.Permanent

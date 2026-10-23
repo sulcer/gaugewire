@@ -227,6 +227,9 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 	if s.DataSourceID == 0 {
 		return check{name: name, detail: "data source not configured"}
 	}
+	if s.HistoryDatasetID == 0 && s.CurrentDatasetID == 0 {
+		return check{name: name, detail: "dataset ids not configured; run gaugewire databox bootstrap"}
+	}
 	list, err := client.Datasets(ctx, s.DataSourceID)
 	if err != nil {
 		return check{name: name, detail: err.Error()}

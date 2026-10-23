@@ -527,3 +527,38 @@ func TestRunDoctorUsesTheRecordedSettingsPath(t *testing.T) {
 		t.Fatalf("got %+v, want %+v; stdout:\n%s", got, want, stdout.String())
 	}
 }
+
+// A v1 configuration loads with both dataset ids unset; doctor names the fix
+// rather than an API error for a data source id that predates v2.
+func TestDoctorAsksForBootstrapWhenBothDatasetIDsAreUnset(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v2/auth/validate-key", validKey)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks[0].HistoryDatasetID, cfg.Sinks[0].CurrentDatasetID = 0, 0
+	if err := config.Save(home, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got := struct {
+		out  string
+		seen []string
+	}{renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir))), f.seen()}
+	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
+	want = strings.Replace(want,
+		"✓ datasets (databox-main): history 901, current 902",
+		"✗ datasets (databox-main): dataset ids not configured; run gaugewire databox bootstrap", 1)
+	want = strings.Replace(want,
+		"✓ last ingestion (databox-main): history success, current success",
+		"✗ last ingestion (databox-main): history not configured, current not configured", 1)
+	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
+	if diff := cmp.Diff(struct {
+		out  string
+		seen []string
+	}{want, []string{"GET /v2/auth/validate-key"}}, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
