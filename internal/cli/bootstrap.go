@@ -10,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"time"
 	"uuid"
 
@@ -21,9 +19,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/sink/databox"
 	"github.com/sulcer/gaugewire/internal/store"
 )
-
-// ErrChooseAccount means the key reaches several accounts and none was named.
-var ErrChooseAccount = errors.New("several accounts are reachable; pass --account-id")
 
 const defaultSinkID = "databox-main"
 
@@ -46,7 +41,7 @@ func runDatabox(ctx context.Context, args []string, info BuildInfo, streams IO) 
 	flags := flag.NewFlagSet("databox bootstrap", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)
 	opts := bootstrapOptions{getenv: os.Getenv, now: time.Now, info: info}
-	flags.Int64Var(&opts.accountID, "account-id", 0, "account to use when the key reaches several")
+	flags.Int64Var(&opts.accountID, "account-id", 0, "account of the key's organization to act on; omit for the organization itself")
 	flags.StringVar(&opts.apiKeyFile, "api-key-file", "", "file holding the API key; its path is recorded in config.json")
 	flags.BoolVar(&opts.testIngest, "test-ingest", false, "send one heartbeat event after bootstrapping")
 	flags.StringVar(&opts.baseURL, "base-url", databox.DefaultBaseURL, "API base URL")
@@ -64,9 +59,11 @@ func runDatabox(ctx context.Context, args []string, info BuildInfo, streams IO) 
 	return bootstrap(ctx, home, opts, streams.Stdout, streams.Stderr)
 }
 
-// bootstrap validates the key, picks the account, reuses or creates the data
-// source and datasets, and records their ids in the sink entry. Ids are resolved
-// by title, so one the account no longer holds is replaced rather than trusted.
+// bootstrap validates the key, reads the organization the requests act on,
+// reuses or creates the data source and datasets, and records their ids in the
+// sink entry. Ids are resolved by name, so one the organization no longer
+// holds is replaced rather than trusted. --account-id is recorded on every
+// run, like --base-url: leaving it out goes back to the organization itself.
 func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout, stderr io.Writer) error {
 	cfg, err := config.Load(home)
 	if err != nil {
@@ -86,44 +83,52 @@ func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout, 
 	if warn != "" {
 		fmt.Fprintln(stderr, "warning: "+warn)
 	}
-	client, err := databox.NewClient(opts.baseURL, key, opts.httpClient)
+	client, err := databox.NewClient(opts.baseURL, key, opts.accountID, opts.httpClient)
 	if err != nil {
 		return err
 	}
 	if err = client.ValidateKey(ctx); err != nil {
 		return fmt.Errorf("validate key: %w", err)
 	}
-	account, err := chooseAccount(ctx, client, opts.accountID)
+	org, err := client.Organization(ctx)
+	if err != nil {
+		return fmt.Errorf("read organization: %w", err)
+	}
+	fmt.Fprintf(stdout, "organization:     %s (%d)\n", org.Name, org.ID)
+	source, sourceCreated, err := ensureDataSource(ctx, client)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "account:          %s (%d)\n", account.Name, account.ID)
-	source, sourceCreated, err := ensureDataSource(ctx, client, account.ID)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "data source:      %s (%d) %s\n", source.Title, source.ID, createdOrReused(sourceCreated))
+	fmt.Fprintf(stdout, "data source:      %s (%d) %s\n", source.Name, source.ID, createdOrReused(sourceCreated))
 	existing, err := client.Datasets(ctx, source.ID)
 	if err != nil {
 		return fmt.Errorf("list datasets: %w", err)
 	}
-	history, historyCreated, err := ensureDataset(ctx, client, existing, source.ID, databox.HistoryTitle, databox.HistoryPrimaryKey)
+	history, historyCreated, err := ensureDataset(ctx, client, existing, source.ID, databox.HistoryTitle, databox.HistoryPrimaryKey, databox.HistorySchema())
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "history dataset:  %s %s\n", history.ID, createdOrReused(historyCreated))
-	current, currentCreated, err := ensureDataset(ctx, client, existing, source.ID, databox.CurrentTitle, databox.CurrentPrimaryKey)
+	fmt.Fprintf(stdout, "history dataset:  %d %s\n", history.ID, createdOrReused(historyCreated))
+	current, currentCreated, err := ensureDataset(ctx, client, existing, source.ID, databox.CurrentTitle, databox.CurrentPrimaryKey, databox.CurrentSchema())
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "current dataset:  %s %s\n", current.ID, createdOrReused(currentCreated))
+	fmt.Fprintf(stdout, "current dataset:  %d %s\n", current.ID, createdOrReused(currentCreated))
+	// An ingestion record names ingestions of the datasets it was written for;
+	// against new ones doctor would look them up in the wrong dataset and the
+	// Current guard would compare against a capture the new Current never got.
+	if entry.HistoryDatasetID != config.DatasetID(history.ID) || entry.CurrentDatasetID != config.DatasetID(current.ID) {
+		if err = (sink.StateIngestions{Home: home}).SaveIngestion(ctx, entry.ID, sink.Ingestion{}); err != nil {
+			return fmt.Errorf("reset ingestion record: %w", err)
+		}
+	}
 	entry.Type = config.SinkTypeDatabox
 	entry.Enabled = true
 	entry.BaseURL = opts.baseURL
-	entry.AccountID = account.ID
+	entry.AccountID = opts.accountID
 	entry.DataSourceID = source.ID
-	entry.HistoryDatasetID = history.ID
-	entry.CurrentDatasetID = current.ID
+	entry.HistoryDatasetID = config.DatasetID(history.ID)
+	entry.CurrentDatasetID = config.DatasetID(current.ID)
 	if err = config.Save(home, cfg); err != nil {
 		return err
 	}
@@ -162,43 +167,17 @@ func resolveCredentials(entry *config.Sink, apiKeyFile string) error {
 	return nil
 }
 
-func chooseAccount(ctx context.Context, client *databox.Client, wanted int64) (databox.Account, error) {
-	accounts, err := client.Accounts(ctx)
-	if err != nil {
-		return databox.Account{}, fmt.Errorf("list accounts: %w", err)
-	}
-	switch {
-	case len(accounts) == 0:
-		return databox.Account{}, errors.New("the key reaches no account")
-	case wanted != 0:
-		for _, a := range accounts {
-			if a.ID == wanted {
-				return a, nil
-			}
-		}
-		return databox.Account{}, fmt.Errorf("account %d is not reachable with this key", wanted)
-	case len(accounts) == 1:
-		return accounts[0], nil
-	default:
-		names := make([]string, 0, len(accounts))
-		for _, a := range accounts {
-			names = append(names, strconv.FormatInt(a.ID, 10)+" "+a.Name)
-		}
-		return databox.Account{}, fmt.Errorf("%w: %s", ErrChooseAccount, strings.Join(names, ", "))
-	}
-}
-
-func ensureDataSource(ctx context.Context, client *databox.Client, accountID int64) (databox.DataSource, bool, error) {
-	sources, err := client.DataSources(ctx, accountID)
+func ensureDataSource(ctx context.Context, client *databox.Client) (databox.DataSource, bool, error) {
+	sources, err := client.DataSources(ctx)
 	if err != nil {
 		return databox.DataSource{}, false, fmt.Errorf("list data sources: %w", err)
 	}
 	for _, s := range sources {
-		if s.Title == databox.DataSourceTitle {
+		if s.Name == databox.DataSourceTitle {
 			return s, false, nil
 		}
 	}
-	created, err := client.CreateDataSource(ctx, accountID, databox.DataSourceTitle, "UTC")
+	created, err := client.CreateDataSource(ctx, databox.DataSourceTitle, "UTC")
 	if err != nil {
 		return databox.DataSource{}, false, fmt.Errorf("create data source: %w", err)
 	}
@@ -210,17 +189,17 @@ func ensureDataSource(ctx context.Context, client *databox.Client, accountID int
 
 // ensureDataset picks the dataset with the title, creating it when absent. The
 // caller reads the list once: both datasets live in the same data source.
-func ensureDataset(ctx context.Context, client *databox.Client, existing []databox.Dataset, dataSourceID int64, title, primaryKey string) (databox.Dataset, bool, error) {
+func ensureDataset(ctx context.Context, client *databox.Client, existing []databox.Dataset, dataSourceID int64, title, primaryKey string, schema []databox.Column) (databox.Dataset, bool, error) {
 	for _, d := range existing {
-		if d.Title == title {
+		if d.Name == title {
 			return d, false, nil
 		}
 	}
-	created, err := client.CreateDataset(ctx, dataSourceID, title, []string{primaryKey})
+	created, err := client.CreateDataset(ctx, dataSourceID, title, primaryKey, schema)
 	if err != nil {
 		return databox.Dataset{}, false, fmt.Errorf("create dataset %q: %w", title, err)
 	}
-	if created.ID == "" {
+	if created.ID == 0 {
 		return databox.Dataset{}, false, fmt.Errorf("databox returned no id for the created dataset %q", title)
 	}
 	return created, true, nil
@@ -251,7 +230,7 @@ func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entr
 	defer closeLog()
 	sentAt := opts.now().UTC()
 	ingestions := sink.StateIngestions{Home: home}
-	s, err := databox.New(entry.ID, client, databox.Datasets{History: entry.HistoryDatasetID, Current: entry.CurrentDatasetID}, ingestions, func() time.Time { return sentAt }, logger)
+	s, err := databox.New(entry.ID, client, datasets(entry), ingestions, func() time.Time { return sentAt }, logger)
 	if err != nil {
 		return err
 	}

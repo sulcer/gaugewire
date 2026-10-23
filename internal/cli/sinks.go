@@ -18,7 +18,7 @@ func newDataboxClient(s config.Sink, key string, httpClient *http.Client) (*data
 	if base == "" {
 		base = databox.DefaultBaseURL
 	}
-	return databox.NewClient(base, key, httpClient)
+	return databox.NewClient(base, key, s.AccountID, httpClient)
 }
 
 // buildSinks turns the enabled sink configurations into sinks. A sink that
@@ -47,7 +47,7 @@ func buildSinks(cfg config.Config, home string, logger *slog.Logger) ([]sink.Sin
 func buildDataboxSink(s config.Sink, home string, logger *slog.Logger) (sink.Sink, error) {
 	// Checked before the key is read so a sink that cannot deliver never holds
 	// a key in memory and never builds a client pointed at the default host.
-	if s.HistoryDatasetID == "" || s.CurrentDatasetID == "" {
+	if s.HistoryDatasetID == 0 || s.CurrentDatasetID == 0 {
 		return nil, errors.New("both dataset ids are required; run gaugewire databox bootstrap")
 	}
 	key, warn, err := loadAPIKey(s.Credentials, os.Getenv)
@@ -61,5 +61,9 @@ func buildDataboxSink(s config.Sink, home string, logger *slog.Logger) (sink.Sin
 	if err != nil {
 		return nil, err
 	}
-	return databox.New(s.ID, client, databox.Datasets{History: s.HistoryDatasetID, Current: s.CurrentDatasetID}, sink.StateIngestions{Home: home}, time.Now, logger)
+	return databox.New(s.ID, client, datasets(s), sink.StateIngestions{Home: home}, time.Now, logger)
+}
+
+func datasets(s config.Sink) databox.Datasets {
+	return databox.Datasets{History: int64(s.HistoryDatasetID), Current: int64(s.CurrentDatasetID)}
 }

@@ -1,6 +1,6 @@
 # Gaugewire
 
-Status: Draft · Partial · 2026-09-19 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
+Status: Draft · Partial · 2026-10-23 · Lightweight quota observability for a fleet of Claude Code machines: capture, normalize, persist, publish.
 
 ## At a glance
 
@@ -28,7 +28,7 @@ flowchart LR
         GW -.->|spawn, detached| F[gaugewire flush]
         P --> F
     end
-    F -->|HTTPS| D[Databox v1 API]
+    F -->|HTTPS| D[Databox v2 API]
     F -.->|later| O[OTLP, webhook, file]
 ```
 

@@ -2,10 +2,14 @@ package databox
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/sulcer/gaugewire/internal/quota"
 )
@@ -78,5 +82,81 @@ func TestCurrentRecordHasEveryColumn(t *testing.T) {
 	got := encoded(t, CurrentRecord(observedSnapshot("evt-1"), publishedAt))
 	if want := golden(t, "current_record.golden"); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// The column lists and types are the ones the databox-sink spec states.
+func TestHistorySchemaDeclaresTheSpecColumns(t *testing.T) {
+	t.Parallel()
+	want := []Column{
+		{"event_id", "string"},
+		{"event_type", "string"},
+		{"account_id", "string"},
+		{"account_alias", "string"},
+		{"node_id", "string"},
+		{"node_alias", "string"},
+		{"platform", "string"},
+		{"captured_at", "datetime"},
+		{"published_at", "datetime"},
+		{"five_hour_status", "string"},
+		{"five_hour_used_percentage", "number"},
+		{"five_hour_resets_at", "datetime"},
+		{"seven_day_status", "string"},
+		{"seven_day_used_percentage", "number"},
+		{"seven_day_resets_at", "datetime"},
+		{"source_type", "string"},
+		{"claude_code_version", "string"},
+		{"observer_version", "string"},
+	}
+	if diff := cmp.Diff(want, HistorySchema()); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCurrentSchemaDeclaresTheSpecColumns(t *testing.T) {
+	t.Parallel()
+	want := []Column{
+		{"account_id", "string"},
+		{"account_alias", "string"},
+		{"node_id", "string"},
+		{"node_alias", "string"},
+		{"platform", "string"},
+		{"latest_event_id", "string"},
+		{"captured_at", "datetime"},
+		{"last_seen_at", "datetime"},
+		{"five_hour_status", "string"},
+		{"five_hour_used_percentage", "number"},
+		{"five_hour_resets_at", "datetime"},
+		{"seven_day_status", "string"},
+		{"seven_day_used_percentage", "number"},
+		{"seven_day_resets_at", "datetime"},
+		{"claude_code_version", "string"},
+		{"observer_version", "string"},
+	}
+	if diff := cmp.Diff(want, CurrentSchema()); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// Every column a record carries is declared, with a type, when the dataset is created.
+func TestSchemasNameExactlyTheRecordColumns(t *testing.T) {
+	t.Parallel()
+	ids := func(schema []Column) []string {
+		out := make([]string, 0, len(schema))
+		for _, c := range schema {
+			out = append(out, c.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	keys := func(record map[string]any) []string { return slices.Sorted(maps.Keys(record)) }
+	type columns struct{ history, current []string }
+	got := columns{ids(HistorySchema()), ids(CurrentSchema())}
+	want := columns{
+		keys(HistoryRecord(observedSnapshot("evt-1"), quota.EventChange, publishedAt)),
+		keys(CurrentRecord(observedSnapshot("evt-1"), publishedAt)),
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(columns{})); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }

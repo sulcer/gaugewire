@@ -12,7 +12,9 @@ import (
 type call struct {
 	Method      string
 	Path        string
+	Query       string
 	Key         string
+	Account     string
 	Accept      string
 	ContentType string
 	Body        string
@@ -25,8 +27,9 @@ type reply struct {
 	Location string
 }
 
-// fake is a scripted Databox API: replies are keyed by "METHOD /path"; an
-// unscripted request gets 404 with an error envelope. It records every call.
+// fake is a scripted Databox API: replies are keyed by "METHOD /path", the
+// query left out; an unscripted request gets 404 with an error envelope. It
+// records every call.
 type fake struct {
 	mu      sync.Mutex
 	replies map[string][]reply
@@ -65,7 +68,9 @@ func (f *fake) handle(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, call{
 		Method:      r.Method,
 		Path:        r.URL.Path,
+		Query:       r.URL.RawQuery,
 		Key:         r.Header.Get("x-api-key"),
+		Account:     r.Header.Get("x-account-id"),
 		Accept:      r.Header.Get("Accept"),
 		ContentType: r.Header.Get("Content-Type"),
 		Body:        string(raw),

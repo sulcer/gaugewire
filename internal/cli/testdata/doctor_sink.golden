@@ -9,7 +9,7 @@
 ✓ refreshInterval: not set
 ✓ spool: 0 pending, 0 dead-lettered
 ✓ sink auth (databox-main): key valid
-✓ datasets (databox-main): history ds-hist, current ds-cur
+✓ datasets (databox-main): history 901, current 902
 ✓ last ingestion (databox-main): history success, current success
 
 HEALTHY

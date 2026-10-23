@@ -11,8 +11,8 @@ import (
 
 // Datasets are the two dataset ids the sink writes to.
 type Datasets struct {
-	History string
-	Current string
+	History int64
+	Current int64
 }
 
 // Sink delivers snapshots to the History and Current datasets.
@@ -27,7 +27,7 @@ type Sink struct {
 
 // New builds the sink; both dataset ids must be set.
 func New(id string, client *Client, datasets Datasets, ingestions sink.IngestionStore, now func() time.Time, logger *slog.Logger) (*Sink, error) {
-	if datasets.History == "" || datasets.Current == "" {
+	if datasets.History == 0 || datasets.Current == 0 {
 		return nil, errors.New("databox: both dataset ids are required; run gaugewire databox bootstrap")
 	}
 	return &Sink{id: id, client: client, datasets: datasets, ingestions: ingestions, now: now, logger: logger}, nil

@@ -1,6 +1,6 @@
 # CLI and install
 
-Status: Draft · Built · 2026-09-19 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
+Status: Draft · Built · 2026-10-23 · Every command, the install and uninstall algorithms, `status` and `doctor`, logging and the home directory.
 
 ## At a glance
 
@@ -176,8 +176,8 @@ Reads `state.json` and counts spool files. No network.
 | Quota windows | status of each window and age of the last observation |
 | `refreshInterval` | advice only when set |
 | Spool | pending and dead-letter counts, the newest dead-letter reason, and the count of `.unreadable` files |
-| Sink auth (per enabled Databox sink) | `GET /v1/auth/validate-key` |
-| Datasets (per enabled Databox sink) | both ids present in `GET /v1/data-sources/{id}/datasets` |
+| Sink auth (per enabled Databox sink) | `GET /v2/auth/validate-key` |
+| Datasets (per enabled Databox sink) | both ids present in `GET /v2/datasets?dataSourceId={id}` |
 | Last ingestion (per enabled Databox sink) | latest ingestion id per dataset polled; rejected records fail the row |
 
 The overrides check reads `.claude/settings.local.json` before `.claude/settings.json` in the

@@ -29,6 +29,7 @@ type fakeDatabox struct {
 	replies  map[string][]string // "METHOD /path" -> bodies in order (last repeats), status 200
 	fail     map[string]int      // "METHOD /path" -> status for the error envelope
 	calls    []string
+	accounts []string            // x-account-id of each call, in arrival order
 	requests map[string][]string // "METHOD /path" -> request bodies in arrival order
 	server   *httptest.Server
 }
@@ -42,6 +43,7 @@ func newFakeDatabox(t *testing.T) *fakeDatabox {
 		defer f.mu.Unlock()
 		key := r.Method + " " + r.URL.Path
 		f.calls = append(f.calls, key)
+		f.accounts = append(f.accounts, r.Header.Get("x-account-id"))
 		f.requests[key] = append(f.requests[key], string(raw))
 		w.Header().Set("Content-Type", "application/json")
 		if status, ok := f.fail[key]; ok {
@@ -83,6 +85,12 @@ func (f *fakeDatabox) seen() []string {
 	return append([]string(nil), f.calls...)
 }
 
+func (f *fakeDatabox) accountHeaders() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.accounts...)
+}
+
 func (f *fakeDatabox) bodies(key string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -90,15 +98,15 @@ func (f *fakeDatabox) bodies(key string) []string {
 }
 
 const (
-	oneAccount     = `{"requestId":"r","status":"success","accounts":[{"id":123456,"name":"Acme","accountType":"organization"}]}`
-	twoAccounts    = `{"requestId":"r","status":"success","accounts":[{"id":123456,"name":"Acme","accountType":"organization"},{"id":7,"name":"Other","accountType":"client"}]}`
-	noDataSources  = `{"requestId":"r","status":"success","dataSources":[]}`
-	oneDataSource  = `{"requestId":"r","status":"success","dataSources":[{"id":4754489,"title":"Gaugewire","created":"2025-10-01T12:00:00.000000Z","timezone":"UTC","key":"ingestion","ingestionSupported":true}]}`
-	createdSource  = `{"requestId":"r","status":"success","id":4754489,"title":"Gaugewire","created":"2025-10-01T12:00:00.000000Z","timezone":"UTC","key":"ingestion","ingestionSupported":true}`
-	noDatasets     = `{"requestId":"r","status":"success","datasets":[]}`
-	bothDatasets   = `{"requestId":"r","status":"success","datasets":[{"id":"ds-hist","title":"Claude Quota History","created":"x"},{"id":"ds-cur","title":"Claude Quota Current","created":"x"}]}`
-	createdHistory = `{"requestId":"r","status":"success","id":"ds-hist","title":"Claude Quota History","created":"x"}`
-	createdCurrent = `{"requestId":"r","status":"success","id":"ds-cur","title":"Claude Quota Current","created":"x"}`
+	organization   = `{"requestId":"r","status":"success","data":{"id":123456,"name":"Acme","companyName":"Acme, Inc."}}`
+	noDataSources  = `{"requestId":"r","status":"success","data":{"items":[],"pagination":{"page":0,"pageSize":100,"totalItems":0}}}`
+	oneDataSource  = `{"requestId":"r","status":"success","data":{"items":[{"id":4754489,"name":"Gaugewire","integrationKey":"DataboxAPI","timezone":"UTC"}],"pagination":{"page":0,"pageSize":100,"totalItems":1}}}`
+	createdSource  = `{"requestId":"r","status":"success","data":{"id":4754489,"name":"Gaugewire","integrationKey":"DataboxAPI","timezone":"UTC"}}`
+	noDatasets     = `{"requestId":"r","status":"success","data":{"items":[],"pagination":{"page":0,"pageSize":100,"totalItems":0}}}`
+	bothDatasets   = `{"requestId":"r","status":"success","data":{"items":[{"id":901,"dataSourceId":4754489,"name":"Claude Quota History"},{"id":902,"dataSourceId":4754489,"name":"Claude Quota Current"}],"pagination":{"page":0,"pageSize":100,"totalItems":2}}}`
+	createdHistory = `{"requestId":"r","status":"success","data":{"id":901,"dataSourceId":4754489,"name":"Claude Quota History"}}`
+	createdCurrent = `{"requestId":"r","status":"success","data":{"id":902,"dataSourceId":4754489,"name":"Claude Quota Current"}}`
+	emptyData      = `{"requestId":"r","status":"success","data":{}}`
 	validKey       = `{"requestId":"r","status":"success"}`
 )
 
@@ -126,12 +134,12 @@ func freshHome(t *testing.T) string {
 func TestBootstrapCreatesEverythingOnAnEmptyAccount(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", oneAccount)
-	f.on("GET /v1/accounts/123456/data-sources", noDataSources)
-	f.on("POST /v1/data-sources", createdSource)
-	f.on("GET /v1/data-sources/4754489/datasets", noDatasets)
-	f.on("POST /v1/datasets", createdHistory, createdCurrent)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", noDataSources)
+	f.on("POST /v2/data-sources", createdSource)
+	f.on("GET /v2/datasets", noDatasets)
+	f.on("POST /v2/datasets", createdHistory, createdCurrent)
 	home := freshHome(t)
 	var stdout bytes.Buffer
 	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout, &bytes.Buffer{})
@@ -149,19 +157,19 @@ func TestBootstrapCreatesEverythingOnAnEmptyAccount(t *testing.T) {
 		calls []string
 	}{
 		out: strings.Join([]string{
-			"account:          Acme (123456)",
+			"organization:     Acme (123456)",
 			"data source:      Gaugewire (4754489) created",
-			"history dataset:  ds-hist created",
-			"current dataset:  ds-cur created",
+			"history dataset:  901 created",
+			"current dataset:  902 created",
 		}, "\n") + "\n",
 		sinks: []config.Sink{{
 			ID: "databox-main", Type: "databox", Enabled: true, BaseURL: f.server.URL,
-			AccountID: 123456, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+			DataSourceID: 4754489, CurrentDatasetID: 902, HistoryDatasetID: 901,
 			Credentials: config.Credentials{APIKeyEnv: config.DefaultAPIKeyEnv},
 		}},
 		calls: []string{
-			"GET /v1/auth/validate-key", "GET /v1/accounts", "GET /v1/accounts/123456/data-sources",
-			"POST /v1/data-sources", "GET /v1/data-sources/4754489/datasets", "POST /v1/datasets", "POST /v1/datasets",
+			"GET /v2/auth/validate-key", "GET /v2/organization", "GET /v2/data-sources",
+			"POST /v2/data-sources", "GET /v2/datasets", "POST /v2/datasets", "POST /v2/datasets",
 		},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
@@ -172,10 +180,10 @@ func TestBootstrapCreatesEverythingOnAnEmptyAccount(t *testing.T) {
 func TestBootstrapReusesExistingResources(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", oneAccount)
-	f.on("GET /v1/accounts/123456/data-sources", oneDataSource)
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", oneDataSource)
+	f.on("GET /v2/datasets", bothDatasets)
 	home := freshHome(t)
 	var stdout bytes.Buffer
 	err := bootstrap(t.Context(), home, bootstrapOpts(f), &stdout, &bytes.Buffer{})
@@ -190,14 +198,14 @@ func TestBootstrapReusesExistingResources(t *testing.T) {
 		calls []string
 	}{
 		out: strings.Join([]string{
-			"account:          Acme (123456)",
+			"organization:     Acme (123456)",
 			"data source:      Gaugewire (4754489) reused",
-			"history dataset:  ds-hist reused",
-			"current dataset:  ds-cur reused",
+			"history dataset:  901 reused",
+			"current dataset:  902 reused",
 		}, "\n") + "\n",
 		calls: []string{
-			"GET /v1/auth/validate-key", "GET /v1/accounts",
-			"GET /v1/accounts/123456/data-sources", "GET /v1/data-sources/4754489/datasets",
+			"GET /v2/auth/validate-key", "GET /v2/organization",
+			"GET /v2/data-sources", "GET /v2/datasets",
 		},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
@@ -205,50 +213,72 @@ func TestBootstrapReusesExistingResources(t *testing.T) {
 	}
 }
 
-func TestBootstrapNeedsAccountIDWhenSeveralAccounts(t *testing.T) {
+func TestBootstrapActsOnTheGivenAccount(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", twoAccounts)
-	home := freshHome(t)
-	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
-	cfg, _ := config.Load(home)
-	type outcome struct {
-		choose  bool
-		message string
-		sinks   int
-	}
-	got := outcome{errors.Is(err, ErrChooseAccount), fmt.Sprint(err), len(cfg.Sinks)}
-	if want := (outcome{true, "several accounts are reachable; pass --account-id: 123456 Acme, 7 Other", 0}); got != want {
-		t.Fatalf("got %+v, want %+v", got, want)
-	}
-}
-
-func TestBootstrapUsesTheGivenAccountID(t *testing.T) {
-	t.Parallel()
-	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", twoAccounts)
-	f.on("GET /v1/accounts/7/data-sources", noDataSources)
-	f.on("POST /v1/data-sources", createdSource)
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", `{"requestId":"r","status":"success","data":{"id":7,"name":"Client A"}}`)
+	f.on("GET /v2/data-sources", noDataSources)
+	f.on("POST /v2/data-sources", createdSource)
+	f.on("GET /v2/datasets", bothDatasets)
 	opts := bootstrapOpts(f)
 	opts.accountID = 7
 	home := freshHome(t)
 	err := bootstrap(t.Context(), home, opts, &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
 	got := struct {
-		err   bool
-		sinks []config.Sink
-	}{err != nil, cfg.Sinks}
+		err      bool
+		sinks    []config.Sink
+		accounts []string
+	}{err != nil, cfg.Sinks, f.accountHeaders()}
 	want := struct {
-		err   bool
-		sinks []config.Sink
+		err      bool
+		sinks    []config.Sink
+		accounts []string
 	}{false, []config.Sink{{
 		ID: "databox-main", Type: "databox", Enabled: true, BaseURL: f.server.URL,
-		AccountID: 7, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+		AccountID: 7, DataSourceID: 4754489, CurrentDatasetID: 902, HistoryDatasetID: 901,
 		Credentials: config.Credentials{APIKeyEnv: config.DefaultAPIKeyEnv},
-	}}}
+	}}, []string{"7", "7", "7", "7", "7"}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBootstrapCreatesDatasetsWithTheirSchemas(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", oneDataSource)
+	f.on("GET /v2/datasets", noDatasets)
+	f.on("POST /v2/datasets", createdHistory, createdCurrent)
+	err := bootstrap(t.Context(), freshHome(t), bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
+	type request struct {
+		DataSourceID int64            `json:"dataSourceId"`
+		Name         string           `json:"name"`
+		PrimaryKey   []string         `json:"primaryKey"`
+		Schema       []databox.Column `json:"schema"`
+	}
+	requests := []request{}
+	for _, b := range f.bodies("POST /v2/datasets") {
+		var r request
+		if decodeErr := json.Unmarshal([]byte(b), &r); decodeErr != nil {
+			t.Fatalf("decode %q: %v", b, decodeErr)
+		}
+		requests = append(requests, r)
+	}
+	got := struct {
+		err      bool
+		requests []request
+	}{err != nil, requests}
+	want := struct {
+		err      bool
+		requests []request
+	}{false, []request{
+		{4754489, "Claude Quota History", []string{"event_id"}, databox.HistorySchema()},
+		{4754489, "Claude Quota Current", []string{"account_id"}, databox.CurrentSchema()},
+	}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -257,7 +287,7 @@ func TestBootstrapUsesTheGivenAccountID(t *testing.T) {
 func TestBootstrapStopsOnAnInvalidKeyWithoutWriting(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.failWith("GET /v1/auth/validate-key", http.StatusUnauthorized)
+	f.failWith("GET /v2/auth/validate-key", http.StatusUnauthorized)
 	home := freshHome(t)
 	err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
 	cfg, _ := config.Load(home)
@@ -270,7 +300,7 @@ func TestBootstrapStopsOnAnInvalidKeyWithoutWriting(t *testing.T) {
 		err   bool
 		sinks int
 		calls []string
-	}{true, 0, []string{"GET /v1/auth/validate-key"}}
+	}{true, 0, []string{"GET /v2/auth/validate-key"}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -279,10 +309,10 @@ func TestBootstrapStopsOnAnInvalidKeyWithoutWriting(t *testing.T) {
 func TestBootstrapRecordsTheKeyFilePath(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", oneAccount)
-	f.on("GET /v1/accounts/123456/data-sources", oneDataSource)
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", oneDataSource)
+	f.on("GET /v2/datasets", bothDatasets)
 	home := freshHome(t)
 	keyFile := filepath.Join(t.TempDir(), "databox.key")
 	if err := os.WriteFile(keyFile, []byte("file-key\n"), 0o600); err != nil {
@@ -341,20 +371,20 @@ func eventTypes(t *testing.T, bodies []string) []string {
 	return types
 }
 
-const reusedResources = "account:          Acme (123456)\n" +
+const reusedResources = "organization:     Acme (123456)\n" +
 	"data source:      Gaugewire (4754489) reused\n" +
-	"history dataset:  ds-hist reused\n" +
-	"current dataset:  ds-cur reused\n"
+	"history dataset:  901 reused\n" +
+	"current dataset:  902 reused\n"
 
 func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", oneAccount)
-	f.on("GET /v1/accounts/123456/data-sources", oneDataSource)
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
-	f.on("POST /v1/datasets/ds-hist/data", `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST /v1/datasets/ds-cur/data", `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", oneDataSource)
+	f.on("GET /v2/datasets", bothDatasets)
+	f.on("POST /v2/datasets/901/data", `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST /v2/datasets/902/data", `{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`)
 	opts := bootstrapOpts(f)
 	opts.testIngest = true
 	var stdout bytes.Buffer
@@ -363,7 +393,7 @@ func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 		err     bool
 		out     string
 		history []string
-	}{err != nil, stdout.String(), eventTypes(t, f.bodies("POST /v1/datasets/ds-hist/data"))}
+	}{err != nil, stdout.String(), eventTypes(t, f.bodies("POST /v2/datasets/901/data"))}
 	want := struct {
 		err     bool
 		out     string
@@ -377,10 +407,10 @@ func TestBootstrapTestIngestSendsOneHeartbeat(t *testing.T) {
 func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/accounts", oneAccount)
-	f.on("GET /v1/accounts/123456/data-sources", oneDataSource)
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/organization", organization)
+	f.on("GET /v2/data-sources", oneDataSource)
+	f.on("GET /v2/datasets", bothDatasets)
 	opts := bootstrapOpts(f)
 	opts.testIngest = true
 	var stdout bytes.Buffer
@@ -397,8 +427,8 @@ func TestBootstrapTestIngestSkipsWithoutAnObservation(t *testing.T) {
 	}{
 		out: reusedResources + "test ingest:      skipped: no quota observation yet; run it again after Claude Code has shown its status line\n",
 		calls: []string{
-			"GET /v1/auth/validate-key", "GET /v1/accounts",
-			"GET /v1/accounts/123456/data-sources", "GET /v1/data-sources/4754489/datasets",
+			"GET /v2/auth/validate-key", "GET /v2/organization",
+			"GET /v2/data-sources", "GET /v2/datasets",
 		},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
@@ -414,8 +444,8 @@ func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
 	}
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("POST /v1/datasets/ds-hist/data", `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST /v1/datasets/ds-cur/data", `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	f.on("POST /v2/datasets/901/data", `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST /v2/datasets/902/data", `{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`)
 	home := observedHome(t)
 	state, err := store.LoadState(home)
 	if err != nil {
@@ -437,11 +467,11 @@ func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
 	if os.WriteFile(filepath.Join(home, "probe"), nil, 0o600) == nil {
 		t.Skip("directory modes do not stop this user from writing")
 	}
-	client, err := databox.NewClient(f.server.URL, "boot-key", f.server.Client())
+	client, err := databox.NewClient(f.server.URL, "boot-key", 0, f.server.Client())
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	entry := config.Sink{ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, HistoryDatasetID: "ds-hist", CurrentDatasetID: "ds-cur"}
+	entry := config.Sink{ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, HistoryDatasetID: 901, CurrentDatasetID: 902}
 	var stdout bytes.Buffer
 	err = sendTestHeartbeat(t.Context(), home, testConfig(), entry, client, bootstrapOpts(f), &stdout)
 	got := struct {
@@ -455,10 +485,79 @@ func TestBootstrapTestIngestRefusesARecordLeftByAnEarlierRun(t *testing.T) {
 		calls []string
 	}{
 		err:   "test ingest was accepted but the ingestion record could not be read back; check logs/gaugewire.log",
-		calls: []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"},
+		calls: []string{"POST /v2/datasets/901/data", "POST /v2/datasets/902/data"},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// homeWithRecord holds a sink whose dataset ids are history and current and
+// the ingestion record a flush to them left.
+func homeWithRecord(t *testing.T, history, current config.DatasetID) string {
+	t.Helper()
+	home := observedHome(t)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks = []config.Sink{{
+		ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true,
+		DataSourceID: 4754489, HistoryDatasetID: history, CurrentDatasetID: current,
+		Credentials: config.Credentials{APIKeyEnv: config.DefaultAPIKeyEnv},
+	}}
+	if saveErr := config.Save(home, cfg); saveErr != nil {
+		t.Fatalf("save: %v", saveErr)
+	}
+	state, err := store.LoadState(home)
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	state.LastIngestion = map[string]store.IngestionRecord{"databox-main": oldRecord}
+	if saveErr := store.SaveState(home, state); saveErr != nil {
+		t.Fatalf("save state: %v", saveErr)
+	}
+	return home
+}
+
+var (
+	oldCapture = time.Date(2026, 9, 18, 11, 58, 0, 0, time.UTC)
+	oldRecord  = store.IngestionRecord{Current: "ing-c-old", History: "ing-h-old", CurrentCapturedAt: &oldCapture, At: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+)
+
+func TestBootstrapResetsTheIngestionRecordWhenTheDatasetsChange(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name             string
+		history, current config.DatasetID
+		want             store.IngestionRecord
+	}{
+		{name: "upgraded from v1", history: 0, current: 0, want: store.IngestionRecord{}},
+		{name: "current replaced", history: 901, current: 777, want: store.IngestionRecord{}},
+		{name: "same datasets", history: 901, current: 902, want: oldRecord},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFakeDatabox(t)
+			f.on("GET /v2/auth/validate-key", validKey)
+			f.on("GET /v2/organization", organization)
+			f.on("GET /v2/data-sources", oneDataSource)
+			f.on("GET /v2/datasets", bothDatasets)
+			home := homeWithRecord(t, tc.history, tc.current)
+			err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
+			state, loadErr := store.LoadState(home)
+			got := struct {
+				errs [2]bool
+				rec  store.IngestionRecord
+			}{[2]bool{err != nil, loadErr != nil}, state.LastIngestion["databox-main"]}
+			want := struct {
+				errs [2]bool
+				rec  store.IngestionRecord
+			}{rec: tc.want}
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
+				t.Fatalf("mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -471,15 +570,15 @@ func TestBootstrapRefusesACreatedResourceWithoutAnID(t *testing.T) {
 	}{
 		{
 			name:    "data source",
-			script:  map[string]string{"GET /v1/accounts/123456/data-sources": noDataSources, "POST /v1/data-sources": validKey},
+			script:  map[string]string{"GET /v2/data-sources": noDataSources, "POST /v2/data-sources": emptyData},
 			wantErr: "databox returned no id for the created data source",
 		},
 		{
 			name: "dataset",
 			script: map[string]string{
-				"GET /v1/accounts/123456/data-sources":  oneDataSource,
-				"GET /v1/data-sources/4754489/datasets": noDatasets,
-				"POST /v1/datasets":                     validKey,
+				"GET /v2/data-sources": oneDataSource,
+				"GET /v2/datasets":     noDatasets,
+				"POST /v2/datasets":    emptyData,
 			},
 			wantErr: `databox returned no id for the created dataset "Claude Quota History"`,
 		},
@@ -487,8 +586,8 @@ func TestBootstrapRefusesACreatedResourceWithoutAnID(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFakeDatabox(t)
-			f.on("GET /v1/auth/validate-key", validKey)
-			f.on("GET /v1/accounts", oneAccount)
+			f.on("GET /v2/auth/validate-key", validKey)
+			f.on("GET /v2/organization", organization)
 			for key, body := range tc.script {
 				f.on(key, body)
 			}

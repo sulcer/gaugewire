@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Draft · Built · 2026-09-19 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
+Status: Draft · Built · 2026-10-23 · Components, package layout, dependency direction, runtime lifecycle, fleet model and extension points.
 
 ## At a glance
 
@@ -21,7 +21,7 @@ flowchart TB
         REN[renderer<br/>run original command]
         STO[store<br/>home dir, atomic writes,<br/>locks, state, spool]
         SNK[sink<br/>Sink, Flusher]
-        DBX[sink/databox<br/>v1 client, records]
+        DBX[sink/databox<br/>v2 client, records]
     end
     Q[quota<br/>Snapshot, Window,<br/>Reduce, Decide]
     CFG[config]
@@ -46,7 +46,7 @@ internal/store/              home dir, atomic write, flock locks, state.json, pe
 internal/settings/           edit one member of Claude Code's settings file by byte offsets
 internal/renderer/           run the saved command with exact stdin, forward stdout
 internal/sink/               Sink interface, Flusher, per-sink delivery bookkeeping
-internal/sink/databox/       v1 client, dataset records, error classification, the Sink
+internal/sink/databox/       v2 client, dataset records, error classification, the Sink
 internal/config/             config.json load, validate, save
 internal/cli/                one file per subcommand; status and doctor rendering
 fixtures/statusline/         real and synthetic stdin payloads for tests

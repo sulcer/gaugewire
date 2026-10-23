@@ -7,6 +7,7 @@ decision-date: 2026-09-19
 # Doctor judges an ingestion by its rejected records
 
 Amends: 2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md (decision: doctor reports a failed ingestion)
+Amended by: 2026-10-23-databox-sink-targets-v2.md (the field doctor reads)
 
 ## Members
 

@@ -1,6 +1,8 @@
 # Databox sink
 
-Status: Draft · Partial · 2026-09-19 · The first sink: Databox REST API v1, two datasets, batching and ordering, acknowledgement, error classes and bootstrap.
+Status: Draft · Partial · 2026-10-23 · The first sink: Databox REST API v2, two datasets, batching and ordering, acknowledgement, error classes and bootstrap.
+
+Changes: [2026-10-23-databox-sink-targets-v2.md](../../adr/2026-10-23-databox-sink-targets-v2.md)
 
 ## At a glance
 
@@ -14,48 +16,52 @@ assumptions, is outstanding.
 
 ## API facts (public documentation)
 
-Source: the public developer documentation at https://developers.databox.com, fetched
-2026-09-19.
+Source: the public developer documentation at https://developers.databox.com/docs/api, fetched
+2026-10-23, including the v1 to v2 migration guide. v1 still runs; new functionality goes to v2
+only.
 
-- Base `https://api.databox.com`, header `x-api-key`, JSON request and response bodies, every
+- Base `https://api.databox.com/v2`, header `x-api-key`, JSON request and response bodies, every
   response carries `requestId`.
-- `GET /v1/auth/validate-key`: 200 when the key is valid, 401 when it is missing or invalid.
-- `GET /v1/accounts` → `{requestId, status, accounts:[{id int, name, accountType}]}`.
-- `GET /v1/accounts/{accountId}/data-sources` →
-  `{dataSources:[{id int, title, created, timezone, key, ingestionSupported}]}`.
-- `POST /v1/data-sources` body `{title (required), accountId int, timezone}` →
-  `{id int, title, created, timezone, key, ingestionSupported}`.
-- `GET /v1/data-sources/{id}/datasets` → `{datasets:[{id string, title, created}]}`.
-- `POST /v1/datasets` body `{title, dataSourceId int (required), primaryKeys []string|null}` →
-  `{id string, title, created}`. Column types are not part of the documented request.
-- `POST /v1/datasets/{id}/data` body `{records:[{...}]}`, at most 100 records per ingestion
-  event → `{requestId, status, ingestionId, message}`.
-- `GET /v1/datasets/{id}/ingestions/{ingestionId}` →
-  `{requestId, status, ingestionId, timestamp, metrics{datasetMetrics{columnsCount,
-  datasetSizeMB, totalDatasetRecordsCount}, ingestionMetrics{appendedRecordsCount,
-  receivedRecordsCount, rejectedRecordsCount, overwrittenRecordsCount}}}`. Overwritten means a
-  record with an existing primary key replaced the stored row.
-- Error envelope `{requestId, status:"error", errors:[{code (string|null), message, field,
-  type}]}` on 400 and 401.
+- Success responses carry `{requestId, status, data}`; lists carry
+  `data: {items, pagination: {page, pageSize, totalItems}}`, with `page` 0-indexed and
+  `pageSize` at most 100.
+- Requests act on the key's organization. The optional header `x-account-id` acts on one of the
+  organization's accounts instead; data sources, datasets and the organization resource accept
+  it, and key validation ignores it.
+- `GET /v2/auth/validate-key`: 200 when the key is valid, 401 when it is missing or invalid.
+- `GET /v2/organization` → `data: {id int, name, ...}`.
+- `GET /v2/data-sources` (paginated) → items `{id int, name, integrationKey, timezone, ...}`.
+- `POST /v2/data-sources` body `{name (required), timezone}` → `data: {id int, name, ...}`.
+- `GET /v2/datasets?dataSourceId={id}` (paginated) → items
+  `{id int, dataSourceId int, name, ingestionSupported, ...}`.
+- `POST /v2/datasets` body `{name, dataSourceId int, primaryKey []string, schema: [{id,
+  dataType}]}`; `name`, `dataSourceId` and `schema` are required and `dataType` is `datetime`,
+  `number` or `string` → `data: {id int, name, ...}`.
+- `POST /v2/datasets/{id}/data` body `{records:[{...}]}` →
+  `data: {ingestionId, status, message}`.
+- `GET /v2/datasets/{id}/ingestions/{ingestionId}` → `data: {id, initiatedAt, status, duration,
+  summary: {ingestion: {receivedRecordCount, appendedRecordCount, overwrittenRecordCount,
+  rejectedRecordCount}, dataset: {...}}, errors: [{code, message, field, record}]}`.
+  Overwritten means a record with an existing primary key replaced the stored row.
+- Error envelope `{requestId, status:"error", errors:[{code, message, field, type}]}`. Documented
+  statuses: 400, 401, 403, 404, 413, 429 and 500. Error codes can also arrive in the body of a
+  2xx response.
 - Rate limits: 10 000 requests per hour and 10 per second per key; backoff is expected. Payloads
-  are at most 500 rows or 10 MB per request, on top of the 100-record ingestion limit.
+  are at most 500 rows or 10 MB per request.
+- POST requests accept an optional `Idempotency-Key` header; the sink does not send it, because
+  both datasets upsert by primary key.
 
 ## Assumptions to verify
 
-- Whether column types are inferred from the first ingestion, so that `*_at` columns behave as
-  datetimes on dashboards rather than strings. The sink sends every column in every record,
-  `null` when unknown, and RFC 3339 timestamps, so it works either way.
+- Whether datasets created through v1 appear in the v2 lists. Bootstrap reuses them by name if
+  they do, and creates two new, empty datasets if they do not.
 - Whether a throttling 429 carries the JSON envelope. The classifier does not depend on it.
-- What status codes errors other than the documented 400 and 401 arrive with.
-- Whether an error always arrives with a non-2xx status; a 200 carrying `"status":"error"` would
-  be read as success by key validation today, and retried by an ingestion, which needs its
-  `ingestionId`.
-- Whether the list endpoints return every item without pagination. The ingestions list documents
-  `page` and `pageSize`; the accounts, data-sources and datasets lists document neither.
+- What `status` values an accepted ingestion reports. The sink acknowledges on `ingestionId`
+  alone.
 
 ## Datasets
 
-One data source titled `Gaugewire`, timezone `UTC`, with two datasets.
+One data source named `Gaugewire`, timezone `UTC`, with two datasets.
 
 **Claude Quota History**, primary key `event_id`, one row per event:
 `event_id, event_type, account_id, account_alias, node_id, node_alias, platform, captured_at,
@@ -75,9 +81,8 @@ One row per subscription holds when every machine on the subscription shares its
 
 Every column is present in every record, `null` when unknown. Timestamps are RFC 3339 UTC with
 millisecond precision; percentages are JSON numbers. `published_at` and `last_seen_at` are set
-by the flusher at send time. Column types are not declared at creation; if they are instead
-inferred from the first ingestion, the values are already shaped so `*_at` columns land as
-`datetime`, `*_used_percentage` as `number`, and everything else as `string`.
+by the flusher at send time. Bootstrap declares every column when it creates a dataset: `*_at`
+columns as `datetime`, `*_used_percentage` as `number`, and everything else as `string`.
 
 ## Delivery of one chunk
 
@@ -121,26 +126,33 @@ bypassed on every following chunk until a newer event's save succeeds and correc
 ## Acknowledgement
 
 An HTTP 200 with an `ingestionId` is the ack; the event is deleted. Asynchronous processing
-failures are surfaced by `doctor`, which polls the latest ingestion id per dataset. The
-ingestion status endpoint's documented shape carries metrics but no error list, and its
-`status` field is only the response envelope's — `success` whenever the API accepted the
-request, whether or not any record was rejected — so `doctor` judges an ingestion by its
-`rejectedRecordsCount`, never by `status`. The stricter verify-before-ack mode is in the
-nice-to-have ledger. Decisions:
+failures are surfaced by `doctor`, which polls the latest ingestion id per dataset and judges it
+by `summary.ingestion.rejectedRecordCount`, never by `status`; when records were rejected, the
+row also shows the first entry of the ingestion's `errors`. The stricter verify-before-ack mode
+is in the nice-to-have ledger. Decisions:
 [acknowledge on accept](../../adr/2026-09-17-databox-sink-targets-v1-and-acks-on-accept.md),
 amended by
-[judge ingestions by rejected records](../../adr/2026-09-19-doctor-judges-ingestions-by-rejected-records.md).
+[judge ingestions by rejected records](../../adr/2026-09-19-doctor-judges-ingestions-by-rejected-records.md),
+both amended by [target v2](../../adr/2026-10-23-databox-sink-targets-v2.md).
 
 ## Error classes
 
 The flusher's classes are in [spool-and-flush](spool-and-flush.md#error-classes); the client
 maps the API onto them:
 
-- The HTTP status decides the class; the error envelope's first `code` names it, else
-  `invalid_api_key` (401), `forbidden` (403), `timeout` (408), `rate_limited` (429),
-  `server_error` (5xx) or `invalid_request` (other 4xx).
-- A 2xx whose body does not decode, or an ingestion response without `ingestionId`, is
-  retryable `invalid_response`.
+- An error status decides the class; the error envelope's first `code` names it, else
+  `invalid_api_key` (401), `forbidden` (403), `not_found` (404), `timeout` (408),
+  `request_too_large` (413), `rate_limited` (429), `server_error` (5xx) or `invalid_request`
+  (other 4xx).
+- A 2xx whose body says `"status":"error"` is classed by its first `code`: `rate_limited`,
+  `internal_error`, `service_unavailable` and `processing_failed` are retryable, any other code
+  is permanent, and no code at all is retryable `invalid_response`.
+- A 2xx whose body or `data` does not decode, or an ingestion response without `ingestionId`,
+  is retryable `invalid_response`; key validation, which reads no payload, also accepts an
+  empty body.
+- A list is read page by page, 100 items a page, until `totalItems` is reached or, without it,
+  until a page comes back short. A list still going after 100 pages is retryable
+  `invalid_response`.
 - A redirect is never followed and is permanent `redirect`.
 - More than 100 records in one ingestion is permanent `too_many_records`, before any request.
 - A base URL that is not `https`, other than plain `http` to `localhost` or a loopback address,
@@ -160,22 +172,18 @@ header never crosses the network in clear and is never replayed to another host.
 ## Bootstrap
 
 `gaugewire databox bootstrap [--account-id n] [--api-key-file path] [--base-url url]
-[--sink-id id] [--test-ingest]` prints one line per resource as it resolves: `account:`,
+[--sink-id id] [--test-ingest]` prints one line per resource as it resolves: `organization:`,
 `data source:`, `history dataset:` and `current dataset:` (each `created` or `reused`), and,
 with `--test-ingest`, `test ingest:` with both ingestion ids, or why it was skipped.
 
 ```mermaid
 flowchart TD
     A[read key: file, else env] -->|missing| E[error with instructions]
-    A --> B[GET /v1/auth/validate-key]
+    A --> B[GET /v2/auth/validate-key]
     B -->|401| E
-    B --> C[GET /v1/accounts]
-    C -->|one| D[use it]
-    C -->|several| F{"--account-id given?"}
-    F -->|no| E
-    F -->|yes| D
-    D --> G[GET accounts/id/data-sources<br/>reuse title Gaugewire, else POST]
-    G --> H[GET data-sources/id/datasets<br/>reuse by title, else POST with primaryKeys]
+    B --> C["GET /v2/organization<br/>(x-account-id when --account-id is given)"]
+    C --> G[GET /v2/data-sources, every page<br/>reuse name Gaugewire, else POST]
+    G --> H[GET /v2/datasets?dataSourceId, every page<br/>reuse by name, else POST with primaryKey and schema]
     H --> I[persist accountId, dataSourceId,<br/>currentDatasetId, historyDatasetId]
     I --> J{"--test-ingest?"}
     J -->|yes| O{"a quota window<br/>observed?"}
@@ -184,16 +192,20 @@ flowchart TD
     J -->|no| L[done]
 ```
 
-Every run re-resolves the data source and the two datasets by title against the account's
-current lists — an id already in config.json is never trusted, only overwritten — so a title
-match is reused and only a missing one is created; repeated runs create nothing new.
+Every run re-resolves the data source and the two datasets by name against the organization's
+current lists — an id already in config.json is never trusted, only overwritten — so a name
+match is reused and only a missing one is created; repeated runs create nothing new. A dataset
+id left by a v1 `config.json` is a UUID string; it reads as unset, so the sink refuses to build
+and its events stay spooled until bootstrap writes the integer ids. When either dataset id
+changes, bootstrap also resets the sink's ingestion record in `state.json`, since its ingestion
+ids and `currentCapturedAt` belong to the datasets it replaces. `doctor` reports a sink with
+both dataset ids unset as `dataset ids not configured; run gaugewire databox bootstrap`.
 `--base-url` defaults to the public host and overwrites a configured `baseUrl` on every run; the
 flag exists so a test can point bootstrap at `httptest`, not to repoint a fleet machine at a
-different real host. A data source is reused by title whether or not it reports
-`ingestionSupported`; with two data sources sharing a title, the first one the API lists wins.
-When several accounts are reachable and `--account-id` is not given, the error lists them by id
-and name (`several accounts are reachable; pass --account-id: 123456 Acme, 7 Other`) and nothing
-is saved.
+different real host. `--account-id` acts on one account of the key's organization: it is sent
+as `x-account-id` on every request, bootstrap's and the sink's, and is saved as `accountId` on
+every run, so a run without it acts on the organization itself. With two data sources sharing a
+name, the first one the API lists wins.
 
 `--test-ingest` sends one heartbeat snapshot after bootstrapping, but only once `state.json`
 holds an observed quota window: before Claude Code has shown its status line the heartbeat would

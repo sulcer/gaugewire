@@ -265,16 +265,16 @@ func TestFlushThroughTheBinaryAgainstAFakeAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/v1/datasets/ds-hist/data":
-			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`))
-		case "/v1/datasets/ds-cur/data":
-			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`))
+		case "/v2/datasets/901/data":
+			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`))
+		case "/v2/datasets/902/data":
+			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	t.Cleanup(srv.Close)
-	sinks := `[{"id":"databox-main","type":"databox","enabled":true,"baseUrl":` + strconv.Quote(srv.URL) + `,"accountId":123456,"dataSourceId":4754489,"currentDatasetId":"ds-cur","historyDatasetId":"ds-hist","credentials":{"apiKeyEnv":"GW_IT_DATABOX_KEY","apiKeyFile":""}}]`
+	sinks := `[{"id":"databox-main","type":"databox","enabled":true,"baseUrl":` + strconv.Quote(srv.URL) + `,"dataSourceId":4754489,"currentDatasetId":902,"historyDatasetId":901,"credentials":{"apiKeyEnv":"GW_IT_DATABOX_KEY","apiKeyFile":""}}]`
 	home := integrationHome(t, "", sinks)
 	payload := openPayload(t)
 	cmd := exec.CommandContext(t.Context(), binary, "statusline")

@@ -174,8 +174,8 @@ func TestDoctorUnhealthy(t *testing.T) {
 }
 
 const (
-	historyIngestion = `{"requestId":"r","status":"success","ingestionId":"ing-h","timestamp":"x","metrics":{"ingestionMetrics":{"appendedRecordsCount":1,"receivedRecordsCount":1,"rejectedRecordsCount":0,"overwrittenRecordsCount":0}}}`
-	currentIngestion = `{"requestId":"r","status":"success","ingestionId":"ing-c","timestamp":"x","metrics":{"ingestionMetrics":{"appendedRecordsCount":0,"receivedRecordsCount":1,"rejectedRecordsCount":0,"overwrittenRecordsCount":1}}}`
+	historyIngestion = `{"requestId":"r","status":"success","data":{"id":"ing-h","initiatedAt":"x","status":"success","summary":{"ingestion":{"receivedRecordCount":1,"appendedRecordCount":1,"overwrittenRecordCount":0,"rejectedRecordCount":0}},"errors":[]}}`
+	currentIngestion = `{"requestId":"r","status":"success","data":{"id":"ing-c","initiatedAt":"x","status":"success","summary":{"ingestion":{"receivedRecordCount":1,"appendedRecordCount":0,"overwrittenRecordCount":1,"rejectedRecordCount":0}},"errors":[]}}`
 )
 
 // doctorSinkFixture is the healthy fixture plus one enabled sink pointing at f
@@ -184,16 +184,16 @@ func doctorSinkFixture(t *testing.T, f *fakeDatabox) (home, settingsPath, workDi
 	t.Helper()
 	home, settingsPath = doctorHealthyFixture(t)
 	workDir = t.TempDir()
-	f.on("GET /v1/data-sources/4754489/datasets", bothDatasets)
-	f.on("GET /v1/datasets/ds-hist/ingestions/ing-h", historyIngestion)
-	f.on("GET /v1/datasets/ds-cur/ingestions/ing-c", currentIngestion)
+	f.on("GET /v2/datasets", bothDatasets)
+	f.on("GET /v2/datasets/901/ingestions/ing-h", historyIngestion)
+	f.on("GET /v2/datasets/902/ingestions/ing-c", currentIngestion)
 	cfg, err := config.Load(home)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	cfg.Sinks = []config.Sink{{
 		ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, BaseURL: f.server.URL,
-		AccountID: 123456, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+		DataSourceID: 4754489, CurrentDatasetID: 902, HistoryDatasetID: 901,
 		Credentials: config.Credentials{APIKeyEnv: "GW_DOCTOR_KEY"},
 	}}
 	if saveErr := config.Save(home, cfg); saveErr != nil {
@@ -224,7 +224,7 @@ func doctorSinkIn(t *testing.T, f *fakeDatabox, home, settingsPath, workDir stri
 func TestDoctorChecksTheSinkWhenEnabled(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
 	if want := doctorGolden(t, "doctor_sink.golden", home, workDir); got != want {
@@ -235,7 +235,7 @@ func TestDoctorChecksTheSinkWhenEnabled(t *testing.T) {
 func TestDoctorReportsAnInvalidSinkKey(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.failWith("GET /v1/auth/validate-key", http.StatusUnauthorized)
+	f.failWith("GET /v2/auth/validate-key", http.StatusUnauthorized)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
@@ -251,14 +251,14 @@ func TestDoctorReportsAnInvalidSinkKey(t *testing.T) {
 func TestDoctorReportsRejectedRecords(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/datasets/ds-cur/ingestions/ing-c", strings.Replace(currentIngestion, `"rejectedRecordsCount":0`, `"rejectedRecordsCount":2`, 1))
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/datasets/902/ingestions/ing-c", strings.Replace(strings.Replace(currentIngestion, `"rejectedRecordCount":0`, `"rejectedRecordCount":2`, 1), `"errors":[]`, `"errors":[{"code":"schema_mismatch","message":"captured_at is not a datetime","field":"captured_at","record":{}}]`, 1))
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
 	want = strings.Replace(want,
 		"✓ last ingestion (databox-main): history success, current success",
-		"✗ last ingestion (databox-main): history success, current success (2 rejected)", 1)
+		"✗ last ingestion (databox-main): history success, current success (2 rejected: captured_at is not a datetime)", 1)
 	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
 	if got != want {
 		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
@@ -268,14 +268,14 @@ func TestDoctorReportsRejectedRecords(t *testing.T) {
 func TestDoctorReportsAMissingDataset(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
-	f.on("GET /v1/data-sources/4754489/datasets", `{"requestId":"r","status":"success","datasets":[{"id":"ds-hist","title":"Claude Quota History","created":"x"}]}`)
+	f.on("GET /v2/auth/validate-key", validKey)
+	f.on("GET /v2/datasets", `{"requestId":"r","status":"success","data":{"items":[{"id":901,"dataSourceId":4754489,"name":"Claude Quota History"}],"pagination":{"page":0,"pageSize":100,"totalItems":1}}}`)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	got := renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir)))
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
 	want = strings.Replace(want,
-		"✓ datasets (databox-main): history ds-hist, current ds-cur",
-		"✗ datasets (databox-main): missing: current ds-cur", 1)
+		"✓ datasets (databox-main): history 901, current 902",
+		"✗ datasets (databox-main): missing: current 902", 1)
 	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
 	if got != want {
 		t.Fatalf("doctor mismatch\n got:\n%s\nwant:\n%s", got, want)
@@ -285,7 +285,7 @@ func TestDoctorReportsAMissingDataset(t *testing.T) {
 func TestDoctorReportsNoIngestionYet(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	state, err := store.LoadState(home)
 	if err != nil {
@@ -320,7 +320,7 @@ func TestDoctorReportsAMissingKey(t *testing.T) {
 	const msg = "no Databox API key: pass --api-key-file to gaugewire databox bootstrap, or set the environment variable named by credentials.apiKeyEnv (default DATABOX_API_KEY)"
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
 	want = strings.Replace(want, "✓ sink auth (databox-main): key valid", "✗ sink auth (databox-main): "+msg, 1)
-	want = strings.Replace(want, "✓ datasets (databox-main): history ds-hist, current ds-cur", "✗ datasets (databox-main): "+msg, 1)
+	want = strings.Replace(want, "✓ datasets (databox-main): history 901, current 902", "✗ datasets (databox-main): "+msg, 1)
 	want = strings.Replace(want, "✓ last ingestion (databox-main): history success, current success", "✗ last ingestion (databox-main): "+msg, 1)
 	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
 	if diff := cmp.Diff(struct {
@@ -337,7 +337,7 @@ func TestDoctorReportsAKeyFileWarningOnAValidKey(t *testing.T) {
 	}
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	keyFile := filepath.Join(t.TempDir(), "databox.key")
 	if err := os.WriteFile(keyFile, []byte("doctor-key"), 0o600); err != nil {
@@ -369,7 +369,7 @@ func TestDoctorReportsAKeyFileWarningOnAValidKey(t *testing.T) {
 func TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	cfg, err := config.Load(home)
 	if err != nil {
@@ -401,7 +401,7 @@ func TestDoctorSkipsTheSinkRowsWhenTheConfigurationIsInvalid(t *testing.T) {
 func TestDoctorSkipsADisabledSink(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	cfg, err := config.Load(home)
 	if err != nil {
@@ -428,14 +428,14 @@ func TestDoctorSkipsADisabledSink(t *testing.T) {
 func TestDoctorReportsUnconfiguredIDs(t *testing.T) {
 	t.Parallel()
 	f := newFakeDatabox(t)
-	f.on("GET /v1/auth/validate-key", validKey)
+	f.on("GET /v2/auth/validate-key", validKey)
 	home, settingsPath, workDir := doctorSinkFixture(t, f)
 	cfg, err := config.Load(home)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	cfg.Sinks[0].DataSourceID = 0
-	cfg.Sinks[0].HistoryDatasetID = ""
+	cfg.Sinks[0].HistoryDatasetID = 0
 	if err := config.Save(home, cfg); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestDoctorReportsUnconfiguredIDs(t *testing.T) {
 	}{renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir))), f.seen()}
 	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
 	want = strings.Replace(want,
-		"✓ datasets (databox-main): history ds-hist, current ds-cur",
+		"✓ datasets (databox-main): history 901, current 902",
 		"✗ datasets (databox-main): data source not configured", 1)
 	want = strings.Replace(want,
 		"✓ last ingestion (databox-main): history success, current success",
@@ -454,7 +454,7 @@ func TestDoctorReportsUnconfiguredIDs(t *testing.T) {
 	if diff := cmp.Diff(struct {
 		out  string
 		seen []string
-	}{want, []string{"GET /v1/auth/validate-key", "GET /v1/datasets/ds-cur/ingestions/ing-c"}}, got, cmp.AllowUnexported(got)); diff != "" {
+	}{want, []string{"GET /v2/auth/validate-key", "GET /v2/datasets/902/ingestions/ing-c"}}, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -525,5 +525,40 @@ func TestRunDoctorUsesTheRecordedSettingsPath(t *testing.T) {
 	got := outcome{err != nil, strings.HasSuffix(stdout.String(), "\nHEALTHY\n")}
 	if want := (outcome{false, true}); got != want {
 		t.Fatalf("got %+v, want %+v; stdout:\n%s", got, want, stdout.String())
+	}
+}
+
+// A v1 configuration loads with both dataset ids unset; doctor names the fix
+// rather than an API error for a data source id that predates v2.
+func TestDoctorAsksForBootstrapWhenBothDatasetIDsAreUnset(t *testing.T) {
+	t.Parallel()
+	f := newFakeDatabox(t)
+	f.on("GET /v2/auth/validate-key", validKey)
+	home, settingsPath, workDir := doctorSinkFixture(t, f)
+	cfg, err := config.Load(home)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	cfg.Sinks[0].HistoryDatasetID, cfg.Sinks[0].CurrentDatasetID = 0, 0
+	if err := config.Save(home, cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got := struct {
+		out  string
+		seen []string
+	}{renderDoctor(diagnose(t.Context(), doctorSinkIn(t, f, home, settingsPath, workDir))), f.seen()}
+	want := doctorGolden(t, "doctor_sink.golden", home, workDir)
+	want = strings.Replace(want,
+		"✓ datasets (databox-main): history 901, current 902",
+		"✗ datasets (databox-main): dataset ids not configured; run gaugewire databox bootstrap", 1)
+	want = strings.Replace(want,
+		"✓ last ingestion (databox-main): history success, current success",
+		"✗ last ingestion (databox-main): history not configured, current not configured", 1)
+	want = strings.Replace(want, "\nHEALTHY\n", "\nUNHEALTHY\n", 1)
+	if diff := cmp.Diff(struct {
+		out  string
+		seen []string
+	}{want, []string{"GET /v2/auth/validate-key"}}, got, cmp.AllowUnexported(got)); diff != "" {
+		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
 }

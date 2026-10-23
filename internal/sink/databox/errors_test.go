@@ -24,8 +24,8 @@ func TestClassify(t *testing.T) {
 		"401 without body":       {401, ``, classified{sink.Permanent, "invalid_api_key"}},
 		"403":                    {403, ``, classified{sink.Permanent, "forbidden"}},
 		"400 with envelope code": {400, envelope, classified{sink.Permanent, "schema_mismatch"}},
-		"404 default code":       {404, ``, classified{sink.Permanent, "invalid_request"}},
-		"413":                    {413, ``, classified{sink.Permanent, "invalid_request"}},
+		"404":                    {404, ``, classified{sink.Permanent, "not_found"}},
+		"413":                    {413, ``, classified{sink.Permanent, "request_too_large"}},
 		"422":                    {422, ``, classified{sink.Permanent, "invalid_request"}},
 		"408":                    {408, ``, classified{sink.Retryable, "timeout"}},
 		"429 with envelope":      {429, `{"errors":[{"code":"rate_limited","message":"slow down"}]}`, classified{sink.Retryable, "rate_limited"}},
@@ -33,6 +33,8 @@ func TestClassify(t *testing.T) {
 		"500":                    {500, ``, classified{sink.Retryable, "server_error"}},
 		"503 with envelope":      {503, `{"errors":[{"code":"service_unavailable","message":"later"}]}`, classified{sink.Retryable, "service_unavailable"}},
 		"418 other 4xx":          {418, ``, classified{sink.Permanent, "invalid_request"}},
+		"200 error with a code":  {200, envelope, classified{sink.Permanent, "schema_mismatch"}},
+		"200 error without code": {200, `{"status":"error","errors":[{"code":null,"message":"later"}]}`, classified{sink.Retryable, "invalid_response"}},
 	}
 	got := map[string]classified{}
 	want := map[string]classified{}
