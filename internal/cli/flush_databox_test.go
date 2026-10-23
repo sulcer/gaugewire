@@ -26,11 +26,11 @@ func fakeAPI(t *testing.T, historyStatus int, historyBody string) (*httptest.Ser
 		requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/v1/datasets/ds-hist/data":
+		case "/v2/datasets/901/data":
 			w.WriteHeader(historyStatus)
 			_, _ = w.Write([]byte(historyBody))
-		case "/v1/datasets/ds-cur/data":
-			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`))
+		case "/v2/datasets/902/data":
+			_, _ = w.Write([]byte(`{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"requestId":"r","status":"error","errors":[{"code":"not_found","message":"no route","field":"","type":"routing"}]}`))
@@ -50,7 +50,7 @@ func databoxHome(t *testing.T, baseURL string) string {
 	}
 	cfg := testConfig(config.Sink{
 		ID: "databox-main", Type: config.SinkTypeDatabox, Enabled: true, BaseURL: baseURL,
-		AccountID: 123456, DataSourceID: 4754489, CurrentDatasetID: "ds-cur", HistoryDatasetID: "ds-hist",
+		DataSourceID: 4754489, CurrentDatasetID: 902, HistoryDatasetID: 901,
 		Credentials: config.Credentials{APIKeyEnv: "GW_TEST_DATABOX_KEY"},
 	})
 	if err := config.Save(home, cfg); err != nil {
@@ -65,7 +65,7 @@ func databoxHome(t *testing.T, baseURL string) string {
 }
 
 func TestFlushDeliversToDataboxAndClearsTheSpool(t *testing.T) {
-	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
 	home := databoxHome(t, srv.URL)
 	var stdout bytes.Buffer
 	err := runFlush(t.Context(), nil, BuildInfo{}, IO{Stdout: &stdout, Stderr: &bytes.Buffer{}})
@@ -147,7 +147,7 @@ func TestFlushRetriesOnRateLimit(t *testing.T) {
 }
 
 func TestFlushFailsWhenASinkHasNoKey(t *testing.T) {
-	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
 	home := databoxHome(t, srv.URL)
 	t.Setenv("GW_TEST_DATABOX_KEY", "")
 	var stdout bytes.Buffer
@@ -163,10 +163,10 @@ func TestFlushFailsWhenASinkHasNoKey(t *testing.T) {
 }
 
 func TestFlushFailsWhenASinkHasNoDatasetIDs(t *testing.T) {
-	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
+	srv, requests := fakeAPI(t, http.StatusOK, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
 	home := databoxHome(t, srv.URL)
 	cfg, _ := config.Load(home)
-	cfg.Sinks[0].HistoryDatasetID, cfg.Sinks[0].CurrentDatasetID = "", ""
+	cfg.Sinks[0].HistoryDatasetID, cfg.Sinks[0].CurrentDatasetID = 0, 0
 	if err := config.Save(home, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}

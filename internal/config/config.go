@@ -51,6 +51,25 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// DatasetID is a dataset's integer id. A string, which is what a v1
+// configuration holds, decodes as zero, unset, so config.json still loads and
+// bootstrap can replace it.
+type DatasetID int64
+
+// UnmarshalJSON reads a number, or a leftover string as unset.
+func (d *DatasetID) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		*d = 0
+		return nil
+	}
+	var id int64
+	if err := json.Unmarshal(data, &id); err != nil {
+		return fmt.Errorf("dataset id: %w", err)
+	}
+	*d = DatasetID(id)
+	return nil
+}
+
 // Identity is a configured node or account identity; it is never inferred.
 type Identity struct {
 	ID    string `json:"id"`
@@ -90,8 +109,8 @@ type Sink struct {
 	BaseURL          string      `json:"baseUrl,omitempty"`
 	AccountID        int64       `json:"accountId,omitempty"`
 	DataSourceID     int64       `json:"dataSourceId,omitempty"`
-	CurrentDatasetID string      `json:"currentDatasetId,omitempty"`
-	HistoryDatasetID string      `json:"historyDatasetId,omitempty"`
+	CurrentDatasetID DatasetID   `json:"currentDatasetId,omitempty"`
+	HistoryDatasetID DatasetID   `json:"historyDatasetId,omitempty"`
 	Credentials      Credentials `json:"credentials"`
 }
 

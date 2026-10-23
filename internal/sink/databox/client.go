@@ -1,4 +1,4 @@
-// Package databox is the first sink: a thin client for the Databox REST API v1,
+// Package databox is the first sink: a thin client for the Databox REST API v2,
 // the two dataset record shapes, and the Sink that delivers spooled snapshots.
 package databox
 
@@ -21,7 +21,8 @@ import (
 // DefaultBaseURL is the public API host.
 const DefaultBaseURL = "https://api.databox.com"
 
-// MaxRecords is the documented maximum per ingestion event.
+// MaxRecords caps one ingestion event at the flusher's batch size, under the
+// documented 500 rows per request.
 const MaxRecords = 100
 
 const maxBody = 1 << 20
@@ -29,54 +30,70 @@ const maxBody = 1 << 20
 // errRedirect is what CheckRedirect returns; do reports it as permanent.
 var errRedirect = errors.New("databox: redirects are not followed")
 
-// Client calls the v1 endpoints Gaugewire needs. It never logs and never
+// Client calls the v2 endpoints Gaugewire needs. It never logs and never
 // includes the key in an error.
 type Client struct {
-	base string
-	key  string
-	http *http.Client
+	base      string
+	key       string
+	accountID int64
+	http      *http.Client
 }
 
-// Account is one Databox account reachable with the key.
-type Account struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	AccountType string `json:"accountType"`
+// Organization is what the key, or the account it acts on, belongs to.
+type Organization struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // DataSource is an ingestion data source.
 type DataSource struct {
-	ID                 int64  `json:"id"`
-	Title              string `json:"title"`
-	Timezone           string `json:"timezone"`
-	IngestionSupported bool   `json:"ingestionSupported"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Timezone string `json:"timezone"`
 }
 
 // Dataset is a container for ingested rows.
 type Dataset struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
-// IngestionMetrics counts what one ingestion did.
-type IngestionMetrics struct {
-	Appended    int `json:"appendedRecordsCount"`
-	Received    int `json:"receivedRecordsCount"`
-	Rejected    int `json:"rejectedRecordsCount"`
-	Overwritten int `json:"overwrittenRecordsCount"`
+// Column declares one dataset column at creation; DataType is datetime,
+// number or string.
+type Column struct {
+	ID       string `json:"id"`
+	DataType string `json:"dataType"`
+}
+
+// IngestionSummary counts what one ingestion did.
+type IngestionSummary struct {
+	Received    int `json:"receivedRecordCount"`
+	Appended    int `json:"appendedRecordCount"`
+	Overwritten int `json:"overwrittenRecordCount"`
+	Rejected    int `json:"rejectedRecordCount"`
+}
+
+// IngestionError is one record the ingestion could not store.
+type IngestionError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Field   string `json:"field"`
 }
 
 // Ingestion is the status of one ingestion event.
 type Ingestion struct {
-	ID        string `json:"ingestionId"`
-	Status    string `json:"status"`
-	Timestamp string `json:"timestamp"`
-	Metrics   IngestionMetrics
+	ID          string
+	Status      string
+	InitiatedAt string
+	Summary     IngestionSummary
+	Errors      []IngestionError
 }
 
-// NewClient builds a client for baseURL with the given key. A nil httpClient
-// uses a default one; the caller's client is copied rather than mutated.
-func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
+// NewClient builds a client for baseURL with the given key. A non-zero
+// accountID acts on that account instead of the key's organization. A nil
+// httpClient uses a default one; the caller's client is copied rather than
+// mutated.
+func NewClient(baseURL, apiKey string, accountID int64, httpClient *http.Client) (*Client, error) {
 	base := strings.TrimSpace(baseURL)
 	if base == "" {
 		return nil, errors.New("databox: base URL is empty")
@@ -97,7 +114,7 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	copied.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return errRedirect
 	}
-	return &Client{base: strings.TrimRight(base, "/"), key: apiKey, http: &copied}, nil
+	return &Client{base: strings.TrimRight(base, "/"), key: apiKey, accountID: accountID, http: &copied}, nil
 }
 
 // allowedScheme accepts https anywhere and plain http only to this machine,
@@ -115,38 +132,30 @@ func allowedScheme(u *url.URL) bool {
 	}
 }
 
-// ValidateKey confirms the key with GET /v1/auth/validate-key.
+// ValidateKey confirms the key with GET /v2/auth/validate-key.
 func (c *Client) ValidateKey(ctx context.Context) error {
-	return c.do(ctx, http.MethodGet, "/v1/auth/validate-key", nil, nil)
+	return c.do(ctx, http.MethodGet, "/v2/auth/validate-key", nil, nil)
 }
 
-// Accounts lists the accounts the key can reach.
-func (c *Client) Accounts(ctx context.Context) ([]Account, error) {
-	var out struct {
-		Accounts []Account `json:"accounts"`
+// Organization reads the organization the requests act on.
+func (c *Client) Organization(ctx context.Context) (Organization, error) {
+	var out Organization
+	if err := c.do(ctx, http.MethodGet, "/v2/organization", nil, &out); err != nil {
+		return Organization{}, err
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/accounts", nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Accounts, nil
+	return out, nil
 }
 
-// DataSources lists an account's data sources.
-func (c *Client) DataSources(ctx context.Context, accountID int64) ([]DataSource, error) {
-	var out struct {
-		DataSources []DataSource `json:"dataSources"`
-	}
-	if err := c.do(ctx, http.MethodGet, "/v1/accounts/"+strconv.FormatInt(accountID, 10)+"/data-sources", nil, &out); err != nil {
-		return nil, err
-	}
-	return out.DataSources, nil
+// DataSources lists every data source of the organization.
+func (c *Client) DataSources(ctx context.Context) ([]DataSource, error) {
+	return list[DataSource](ctx, c, "/v2/data-sources", url.Values{})
 }
 
-// CreateDataSource creates an ingestion data source in the account.
-func (c *Client) CreateDataSource(ctx context.Context, accountID int64, title, timezone string) (DataSource, error) {
-	body := map[string]any{"accountId": accountID, "title": title, "timezone": timezone}
+// CreateDataSource creates an ingestion data source.
+func (c *Client) CreateDataSource(ctx context.Context, name, timezone string) (DataSource, error) {
+	body := map[string]any{"name": name, "timezone": timezone}
 	var out DataSource
-	if err := c.do(ctx, http.MethodPost, "/v1/data-sources", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/v2/data-sources", body, &out); err != nil {
 		return DataSource{}, err
 	}
 	return out, nil
@@ -154,35 +163,28 @@ func (c *Client) CreateDataSource(ctx context.Context, accountID int64, title, t
 
 // Datasets lists a data source's datasets.
 func (c *Client) Datasets(ctx context.Context, dataSourceID int64) ([]Dataset, error) {
-	var out struct {
-		Datasets []Dataset `json:"datasets"`
-	}
-	if err := c.do(ctx, http.MethodGet, "/v1/data-sources/"+strconv.FormatInt(dataSourceID, 10)+"/datasets", nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Datasets, nil
+	return list[Dataset](ctx, c, "/v2/datasets", url.Values{"dataSourceId": {strconv.FormatInt(dataSourceID, 10)}})
 }
 
-// CreateDataset creates a dataset with the given primary keys. Column types
-// are not part of the documented request; they are inferred from ingestion.
-func (c *Client) CreateDataset(ctx context.Context, dataSourceID int64, title string, primaryKeys []string) (Dataset, error) {
-	body := map[string]any{"dataSourceId": dataSourceID, "primaryKeys": primaryKeys, "title": title}
+// CreateDataset creates a dataset with its primary key and column schema.
+func (c *Client) CreateDataset(ctx context.Context, dataSourceID int64, name, primaryKey string, schema []Column) (Dataset, error) {
+	body := map[string]any{"dataSourceId": dataSourceID, "name": name, "primaryKey": []string{primaryKey}, "schema": schema}
 	var out Dataset
-	if err := c.do(ctx, http.MethodPost, "/v1/datasets", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/v2/datasets", body, &out); err != nil {
 		return Dataset{}, err
 	}
 	return out, nil
 }
 
 // Ingest posts one ingestion event and returns its id.
-func (c *Client) Ingest(ctx context.Context, datasetID string, records []map[string]any) (string, error) {
+func (c *Client) Ingest(ctx context.Context, datasetID int64, records []map[string]any) (string, error) {
 	if len(records) > MaxRecords {
 		return "", sink.NewPermanent("too_many_records", fmt.Errorf("databox: %d records exceed the limit of %d per ingestion", len(records), MaxRecords))
 	}
 	var out struct {
 		IngestionID string `json:"ingestionId"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/v1/datasets/"+url.PathEscape(datasetID)+"/data", map[string]any{"records": records}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, datasetPath(datasetID)+"/data", map[string]any{"records": records}, &out); err != nil {
 		return "", err
 	}
 	if out.IngestionID == "" {
@@ -192,19 +194,48 @@ func (c *Client) Ingest(ctx context.Context, datasetID string, records []map[str
 }
 
 // Ingestion fetches the status of one ingestion event.
-func (c *Client) Ingestion(ctx context.Context, datasetID, ingestionID string) (Ingestion, error) {
+func (c *Client) Ingestion(ctx context.Context, datasetID int64, ingestionID string) (Ingestion, error) {
 	var out struct {
-		ID        string `json:"ingestionId"`
-		Status    string `json:"status"`
-		Timestamp string `json:"timestamp"`
-		Metrics   struct {
-			IngestionMetrics IngestionMetrics `json:"ingestionMetrics"`
-		} `json:"metrics"`
+		ID          string `json:"id"`
+		Status      string `json:"status"`
+		InitiatedAt string `json:"initiatedAt"`
+		Summary     struct {
+			Ingestion IngestionSummary `json:"ingestion"`
+		} `json:"summary"`
+		Errors []IngestionError `json:"errors"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/datasets/"+url.PathEscape(datasetID)+"/ingestions/"+url.PathEscape(ingestionID), nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, datasetPath(datasetID)+"/ingestions/"+url.PathEscape(ingestionID), nil, &out); err != nil {
 		return Ingestion{}, err
 	}
-	return Ingestion{ID: out.ID, Status: out.Status, Timestamp: out.Timestamp, Metrics: out.Metrics.IngestionMetrics}, nil
+	return Ingestion{ID: out.ID, Status: out.Status, InitiatedAt: out.InitiatedAt, Summary: out.Summary.Ingestion, Errors: out.Errors}, nil
+}
+
+func datasetPath(id int64) string {
+	return "/v2/datasets/" + strconv.FormatInt(id, 10)
+}
+
+// list reads every page of a list endpoint. Pages are 0-indexed and hold at
+// most 100 items; an empty page also ends the walk, so a wrong totalItems
+// cannot loop forever.
+func list[T any](ctx context.Context, c *Client, path string, query url.Values) ([]T, error) {
+	var all []T
+	for page := 0; ; page++ {
+		query.Set("page", strconv.Itoa(page))
+		query.Set("pageSize", "100")
+		var out struct {
+			Items      []T `json:"items"`
+			Pagination struct {
+				TotalItems int `json:"totalItems"`
+			} `json:"pagination"`
+		}
+		if err := c.do(ctx, http.MethodGet, path+"?"+query.Encode(), nil, &out); err != nil {
+			return nil, err
+		}
+		all = append(all, out.Items...)
+		if len(out.Items) == 0 || len(all) >= out.Pagination.TotalItems {
+			return all, nil
+		}
+	}
 }
 
 // do sends one request with the documented headers and a request timeout,
@@ -226,6 +257,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	req.Header.Set("x-api-key", c.key)
 	req.Header.Set("Accept", "application/json")
+	if c.accountID != 0 {
+		req.Header.Set("x-account-id", strconv.FormatInt(c.accountID, 10))
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -244,11 +278,19 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if resp.StatusCode >= 400 {
 		return classify(resp.StatusCode, raw)
 	}
+	var env envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return sink.NewRetryable("invalid_response", fmt.Errorf("databox: decode response: %w", err))
+	}
+	// The API documents error codes arriving in a 2xx body too.
+	if env.Status == "error" {
+		return classify(resp.StatusCode, raw)
+	}
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		return sink.NewRetryable("invalid_response", fmt.Errorf("databox: decode response: %w", err))
+	if err := json.Unmarshal(env.Data, out); err != nil {
+		return sink.NewRetryable("invalid_response", fmt.Errorf("databox: decode response data: %w", err))
 	}
 	return nil
 }

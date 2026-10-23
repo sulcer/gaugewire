@@ -30,7 +30,7 @@ const specExample = `{
       "id": "databox-main", "type": "databox", "enabled": true,
       "baseUrl": "https://api.databox.com",
       "accountId": 123456, "dataSourceId": 4754489,
-      "currentDatasetId": "uuid", "historyDatasetId": "uuid",
+      "currentDatasetId": 902, "historyDatasetId": 901,
       "credentials": { "apiKeyEnv": "DATABOX_API_KEY", "apiKeyFile": "" }
     }
   ]
@@ -51,7 +51,7 @@ func specConfig() Config {
 		Sinks: []Sink{{
 			ID: "databox-main", Type: "databox", Enabled: true,
 			BaseURL: "https://api.databox.com", AccountID: 123456, DataSourceID: 4754489,
-			CurrentDatasetID: "uuid", HistoryDatasetID: "uuid",
+			CurrentDatasetID: 902, HistoryDatasetID: 901,
 			Credentials: Credentials{APIKeyEnv: "DATABOX_API_KEY"},
 		}},
 	}
@@ -206,5 +206,19 @@ func TestHelpersProjectIntoQuotaTypes(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("projection mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A v1 configuration holds UUID dataset ids. They load as unset so the file
+// stays usable and bootstrap can replace them.
+func TestLoadReadsAStringDatasetIDAsUnset(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	writeConfig(t, home, strings.Replace(strings.Replace(specExample, `"currentDatasetId": 902`, `"currentDatasetId": "4e1219d8-7fa8-44b7-96c6-a8f2a9cfb0bf"`, 1), `"historyDatasetId": 901`, `"historyDatasetId": "8c1f0a3e-2b4d-4e6f-9a1b-3c5d7e9f1a2b"`, 1))
+	got, err := Load(home)
+	want := specConfig()
+	want.Sinks[0].CurrentDatasetID, want.Sinks[0].HistoryDatasetID = 0, 0
+	if diff := cmp.Diff(want, got); err != nil || diff != "" {
+		t.Fatalf("err %v, mismatch (-want +got):\n%s", err, diff)
 	}
 }

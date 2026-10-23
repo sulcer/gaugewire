@@ -50,7 +50,7 @@ var sendAt = time.Date(2026, 9, 17, 15, 30, 5, 0, time.UTC)
 
 func newSink(t *testing.T, f *fake, ings *memIngestions) *Sink {
 	t.Helper()
-	s, err := New("databox-main", client(t, f), Datasets{History: "ds-hist", Current: "ds-cur"}, ings, func() time.Time { return sendAt }, slog.New(slog.DiscardHandler))
+	s, err := New("databox-main", client(t, f), Datasets{History: 901, Current: 902}, ings, func() time.Time { return sendAt }, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -78,8 +78,8 @@ func paths(calls []call) []string {
 func TestPublishBatchWritesHistoryThenCurrentAndRecordsIds(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST", "/v2/datasets/902/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`)
 	ings := &memIngestions{}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1", "evt-2"))
 	newest := capturedAt.Add(time.Minute)
@@ -92,7 +92,7 @@ func TestPublishBatchWritesHistoryThenCurrentAndRecordsIds(t *testing.T) {
 		err   bool
 		paths []string
 		rec   sink.Ingestion
-	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &newest, At: sendAt}}
+	}{false, []string{"POST /v2/datasets/901/data", "POST /v2/datasets/902/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &newest, At: sendAt}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -101,7 +101,7 @@ func TestPublishBatchWritesHistoryThenCurrentAndRecordsIds(t *testing.T) {
 func TestPublishBatchSkipsCurrentWhenOlderThanRecorded(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h2","message":"ok"}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h2","status":"pending","message":"ok"}}`)
 	later := capturedAt.Add(time.Hour)
 	ings := &memIngestions{recs: map[string]sink.Ingestion{"databox-main": {Current: "ing-c1", History: "ing-h1", CurrentCapturedAt: &later, At: sendAt.Add(-time.Hour)}}}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-old"))
@@ -114,7 +114,7 @@ func TestPublishBatchSkipsCurrentWhenOlderThanRecorded(t *testing.T) {
 		err   bool
 		paths []string
 		rec   sink.Ingestion
-	}{false, []string{"POST /v1/datasets/ds-hist/data"}, sink.Ingestion{Current: "ing-c1", History: "ing-h2", CurrentCapturedAt: &later, At: sendAt}}
+	}{false, []string{"POST /v2/datasets/901/data"}, sink.Ingestion{Current: "ing-c1", History: "ing-h2", CurrentCapturedAt: &later, At: sendAt}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -123,7 +123,7 @@ func TestPublishBatchSkipsCurrentWhenOlderThanRecorded(t *testing.T) {
 func TestPublishBatchSkipsCurrentOnAnEqualCaptureTime(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h2","message":"ok"}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h2","status":"pending","message":"ok"}}`)
 	equal := capturedAt
 	ings := &memIngestions{recs: map[string]sink.Ingestion{"databox-main": {Current: "ing-c1", History: "ing-h1", CurrentCapturedAt: &equal, At: sendAt.Add(-time.Hour)}}}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-same"))
@@ -136,7 +136,7 @@ func TestPublishBatchSkipsCurrentOnAnEqualCaptureTime(t *testing.T) {
 		err   bool
 		paths []string
 		rec   sink.Ingestion
-	}{false, []string{"POST /v1/datasets/ds-hist/data"}, sink.Ingestion{Current: "ing-c1", History: "ing-h2", CurrentCapturedAt: &equal, At: sendAt}}
+	}{false, []string{"POST /v2/datasets/901/data"}, sink.Ingestion{Current: "ing-c1", History: "ing-h2", CurrentCapturedAt: &equal, At: sendAt}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -145,7 +145,7 @@ func TestPublishBatchSkipsCurrentOnAnEqualCaptureTime(t *testing.T) {
 func TestPublishBatchReturnsTheClassifiedHistoryError(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 429, `{"requestId":"r","status":"error","errors":[{"code":"rate_limited","message":"slow down","field":"","type":"limit"}]}`)
+	f.on("POST", "/v2/datasets/901/data", 429, `{"requestId":"r","status":"error","errors":[{"code":"rate_limited","message":"slow down","field":"","type":"limit"}]}`)
 	ings := &memIngestions{}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
 	class, code := sink.Classify(err)
@@ -169,8 +169,8 @@ func TestPublishBatchReturnsTheClassifiedHistoryError(t *testing.T) {
 func TestPublishBatchStillSucceedsWhenTheRecordCannotBeSaved(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST", "/v2/datasets/902/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`)
 	ings := &memIngestions{failSave: errors.New("lock timeout")}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
 	got := struct {
@@ -182,7 +182,7 @@ func TestPublishBatchStillSucceedsWhenTheRecordCannotBeSaved(t *testing.T) {
 		err   bool
 		paths []string
 		saved bool
-	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, false}
+	}{false, []string{"POST /v2/datasets/901/data", "POST /v2/datasets/902/data"}, false}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -191,8 +191,8 @@ func TestPublishBatchStillSucceedsWhenTheRecordCannotBeSaved(t *testing.T) {
 func TestPublishBatchPostsCurrentWhenTheRecordIsCorrupt(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST", "/v1/datasets/ds-cur/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-c","message":"ok"}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST", "/v2/datasets/902/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-c","status":"pending","message":"ok"}}`)
 	ings := &memIngestions{failLoad: fmt.Errorf("%w: state.json is not valid", sink.ErrIngestionRecordCorrupt)}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
 	got := struct {
@@ -204,7 +204,7 @@ func TestPublishBatchPostsCurrentWhenTheRecordIsCorrupt(t *testing.T) {
 		err   bool
 		paths []string
 		rec   sink.Ingestion
-	}{false, []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &capturedAt, At: sendAt}}
+	}{false, []string{"POST /v2/datasets/901/data", "POST /v2/datasets/902/data"}, sink.Ingestion{Current: "ing-c", History: "ing-h", CurrentCapturedAt: &capturedAt, At: sendAt}}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -232,8 +232,8 @@ func TestPublishBatchRetriesWhenTheRecordIsLocked(t *testing.T) {
 func TestPublishBatchReturnsTheCurrentErrorAndSavesNothing(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	f.on("POST", "/v1/datasets/ds-hist/data", 200, `{"requestId":"r","status":"success","ingestionId":"ing-h","message":"ok"}`)
-	f.on("POST", "/v1/datasets/ds-cur/data", 503, `{"requestId":"r","status":"error","errors":[{"code":null,"message":"unavailable","field":"","type":"server"}]}`)
+	f.on("POST", "/v2/datasets/901/data", 200, `{"requestId":"r","status":"success","data":{"ingestionId":"ing-h","status":"pending","message":"ok"}}`)
+	f.on("POST", "/v2/datasets/902/data", 503, `{"requestId":"r","status":"error","errors":[{"code":null,"message":"unavailable","field":"","type":"server"}]}`)
 	ings := &memIngestions{}
 	err := newSink(t, f, ings).PublishBatch(t.Context(), deliveries("evt-1"))
 	class, code := sink.Classify(err)
@@ -250,7 +250,7 @@ func TestPublishBatchReturnsTheCurrentErrorAndSavesNothing(t *testing.T) {
 		code   string
 		paths  []string
 		saved  bool
-	}{true, sink.Retryable, "server_error", []string{"POST /v1/datasets/ds-hist/data", "POST /v1/datasets/ds-cur/data"}, false}
+	}{true, sink.Retryable, "server_error", []string{"POST /v2/datasets/901/data", "POST /v2/datasets/902/data"}, false}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 		t.Fatalf("mismatch (-want +got):\n%s", diff)
 	}
@@ -259,7 +259,7 @@ func TestPublishBatchReturnsTheCurrentErrorAndSavesNothing(t *testing.T) {
 func TestNewRefusesMissingDatasetIds(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)
-	_, err := New("databox-main", client(t, f), Datasets{History: "", Current: "ds-cur"}, &memIngestions{}, time.Now, slog.New(slog.DiscardHandler))
+	_, err := New("databox-main", client(t, f), Datasets{History: 0, Current: 902}, &memIngestions{}, time.Now, slog.New(slog.DiscardHandler))
 	if err == nil {
 		t.Fatal("got nil, want an error for a missing dataset id")
 	}

@@ -231,17 +231,21 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 	if err != nil {
 		return check{name: name, detail: err.Error()}
 	}
-	present := make(map[string]bool, len(list))
+	present := make(map[int64]bool, len(list))
 	for _, d := range list {
 		present[d.ID] = true
 	}
 	var found, missing []string
-	for _, want := range []struct{ label, id string }{{"history", s.HistoryDatasetID}, {"current", s.CurrentDatasetID}} {
-		if want.id == "" {
+	ids := datasets(s)
+	for _, want := range []struct {
+		label string
+		id    int64
+	}{{"history", ids.History}, {"current", ids.Current}} {
+		if want.id == 0 {
 			missing = append(missing, want.label+" not configured")
 			continue
 		}
-		part := want.label + " " + want.id
+		part := want.label + " " + strconv.FormatInt(want.id, 10)
 		if present[want.id] {
 			found = append(found, part)
 			continue
@@ -260,14 +264,19 @@ func checkSinkDatasets(ctx context.Context, client *databox.Client, s config.Sin
 func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Sink, rec store.IngestionRecord, name string) check {
 	accepted := true
 	var parts []string
-	for _, want := range []struct{ label, dataset, ingestion string }{
-		{"history", s.HistoryDatasetID, rec.History},
-		{"current", s.CurrentDatasetID, rec.Current},
+	ids := datasets(s)
+	for _, want := range []struct {
+		label     string
+		dataset   int64
+		ingestion string
+	}{
+		{"history", ids.History, rec.History},
+		{"current", ids.Current, rec.Current},
 	} {
 		if want.ingestion == "" {
 			continue
 		}
-		if want.dataset == "" {
+		if want.dataset == 0 {
 			accepted = false
 			parts = append(parts, want.label+" not configured")
 			continue
@@ -279,9 +288,13 @@ func checkLastIngestion(ctx context.Context, client *databox.Client, s config.Si
 			continue
 		}
 		part := want.label + " " + ing.Status
-		if ing.Metrics.Rejected > 0 {
+		if ing.Summary.Rejected > 0 {
 			accepted = false
-			part += fmt.Sprintf(" (%d rejected)", ing.Metrics.Rejected)
+			part += fmt.Sprintf(" (%d rejected", ing.Summary.Rejected)
+			if len(ing.Errors) > 0 {
+				part += ": " + ing.Errors[0].Message
+			}
+			part += ")"
 		}
 		parts = append(parts, part)
 	}
