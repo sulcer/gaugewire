@@ -291,11 +291,13 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if resp.StatusCode >= 400 {
 		return classify(resp.StatusCode, raw)
 	}
+	// Key validation reads no payload, so an empty body is a success; any
+	// other body must still be the API's envelope.
+	if out == nil && len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		if out == nil {
-			return nil
-		}
 		return sink.NewRetryable("invalid_response", fmt.Errorf("databox: decode response: %w", err))
 	}
 	// The API documents error codes arriving in a 2xx body too.

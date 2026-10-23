@@ -148,7 +148,8 @@ maps the API onto them:
   `internal_error`, `service_unavailable` and `processing_failed` are retryable, any other code
   is permanent, and no code at all is retryable `invalid_response`.
 - A 2xx whose body or `data` does not decode, or an ingestion response without `ingestionId`,
-  is retryable `invalid_response`; key validation, which reads no payload, ignores its body.
+  is retryable `invalid_response`; key validation, which reads no payload, also accepts an
+  empty body.
 - A list is read page by page, 100 items a page, until `totalItems` is reached or, without it,
   until a page comes back short. A list still going after 100 pages is retryable
   `invalid_response`.

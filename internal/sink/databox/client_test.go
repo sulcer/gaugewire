@@ -204,13 +204,29 @@ func TestAListThatNeverEndsFailsAfterMaxPages(t *testing.T) {
 	}
 }
 
-// An endpoint read for its status alone succeeds whatever its body holds.
-func TestValidateKeyAcceptsAnEmptySuccessBody(t *testing.T) {
+// Key validation reads no payload: an empty body passes, but a body that is
+// not the API's envelope, such as a proxy's login page, does not.
+func TestValidateKeyAcceptsOnlyAnEmptyOrEnvelopeBody(t *testing.T) {
 	t.Parallel()
-	f := newFake(t)
-	f.on("GET", "/v2/auth/validate-key", 200, ``)
-	if err := client(t, f).ValidateKey(t.Context()); err != nil {
-		t.Fatalf("err %v, want nil", err)
+	tests := []struct {
+		name string
+		body string
+		code string
+	}{
+		{"empty", ``, ""},
+		{"envelope", `{"requestId":"r","status":"success"}`, ""},
+		{"html", `<html>sign in</html>`, "invalid_response"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFake(t)
+			f.on("GET", "/v2/auth/validate-key", 200, tt.body)
+			_, code := sink.Classify(client(t, f).ValidateKey(t.Context()))
+			if code != tt.code {
+				t.Fatalf("code %q, want %q", code, tt.code)
+			}
+		})
 	}
 }
 

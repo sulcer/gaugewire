@@ -520,7 +520,10 @@ func homeWithRecord(t *testing.T, history, current config.DatasetID) string {
 	return home
 }
 
-var oldRecord = store.IngestionRecord{Current: "ing-c-old", History: "ing-h-old", At: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+var (
+	oldCapture = time.Date(2026, 9, 18, 11, 58, 0, 0, time.UTC)
+	oldRecord  = store.IngestionRecord{Current: "ing-c-old", History: "ing-h-old", CurrentCapturedAt: &oldCapture, At: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+)
 
 func TestBootstrapResetsTheIngestionRecordWhenTheDatasetsChange(t *testing.T) {
 	t.Parallel()
@@ -530,6 +533,7 @@ func TestBootstrapResetsTheIngestionRecordWhenTheDatasetsChange(t *testing.T) {
 		want             store.IngestionRecord
 	}{
 		{name: "upgraded from v1", history: 0, current: 0, want: store.IngestionRecord{}},
+		{name: "current replaced", history: 901, current: 777, want: store.IngestionRecord{}},
 		{name: "same datasets", history: 901, current: 902, want: oldRecord},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -541,15 +545,15 @@ func TestBootstrapResetsTheIngestionRecordWhenTheDatasetsChange(t *testing.T) {
 			f.on("GET /v2/datasets", bothDatasets)
 			home := homeWithRecord(t, tc.history, tc.current)
 			err := bootstrap(t.Context(), home, bootstrapOpts(f), &bytes.Buffer{}, &bytes.Buffer{})
-			state, _ := store.LoadState(home)
+			state, loadErr := store.LoadState(home)
 			got := struct {
-				err bool
-				rec store.IngestionRecord
-			}{err != nil, state.LastIngestion["databox-main"]}
+				errs [2]bool
+				rec  store.IngestionRecord
+			}{[2]bool{err != nil, loadErr != nil}, state.LastIngestion["databox-main"]}
 			want := struct {
-				err bool
-				rec store.IngestionRecord
-			}{false, tc.want}
+				errs [2]bool
+				rec  store.IngestionRecord
+			}{rec: tc.want}
 			if diff := cmp.Diff(want, got, cmp.AllowUnexported(got)); diff != "" {
 				t.Fatalf("mismatch (-want +got):\n%s", diff)
 			}
