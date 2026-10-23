@@ -245,9 +245,8 @@ func TestDefaultPathIsUnderTheUserHome(t *testing.T) {
 	}
 }
 
-// FuzzSetGetDelete asserts the two properties install and uninstall rely on:
-// what Set writes, Get reads back exactly, and deleting a member Set had to
-// create restores the original bytes.
+// The two properties install and uninstall rely on: Get reads back exactly what
+// Set wrote, and deleting a member Set created restores the original bytes.
 func FuzzSetGetDelete(f *testing.F) {
 	for _, name := range fixtures {
 		f.Add(read(f, name+".json"))
@@ -274,9 +273,8 @@ func FuzzSetGetDelete(f *testing.F) {
 		}
 		var members map[string]json.RawMessage
 		if json.Unmarshal(object, &members) == nil && len(members) == 0 {
-			// Set writes the first member of an object in the document's own
-			// layout, which drops whatever whitespace stood between the braces;
-			// only the member's disappearance survives that.
+			// Set gives an empty object the document's own layout, dropping the
+			// whitespace between its braces; only the member's removal survives.
 			if again, getErr := Get(deleted, "statusLine"); getErr != nil || again.Found {
 				t.Fatalf("Delete after Set on %q left %q, err %v", object, deleted, getErr)
 			}

@@ -11,8 +11,7 @@ type Observation struct {
 	SevenDay          *Reading
 }
 
-// Reduce folds one observation into the state. It is pure: the caller persists
-// the result. Each window is reduced independently.
+// Reduce folds one observation into the state; the caller persists the result.
 func Reduce(state State, obs Observation) State {
 	state.SchemaVersion = SchemaVersion
 	clock := payloadAge(state.Windows.FiveHour, obs)
@@ -29,13 +28,9 @@ func Reduce(state State, obs Observation) State {
 type age int
 
 const (
-	// undated is a payload that cannot place itself in time, or one older than
-	// the machine's newest.
-	undated age = iota
-	// asRecent is a payload level with the machine's newest.
-	asRecent
-	// newer is a payload past it.
-	newer
+	undated  age = iota // cannot place itself in time, or older than the newest seen
+	asRecent            // level with the newest seen
+	newer               // past it
 )
 
 func reduceWindow(stored Window, incoming *Reading, now time.Time, clock age) Window {
@@ -47,21 +42,13 @@ func reduceWindow(stored Window, incoming *Reading, now time.Time, clock age) Wi
 	return expire(stored, now)
 }
 
-// payloadAge dates a payload by its own five-hour window. That window is at
-// most five hours long, so a payload whose five-hour window has not reset yet
-// was taken within the last five hours, and the window doubles as a clock:
-// within it usage only rises, and a later reset is a later window, so the pair
-// orders payloads by age. The stored five-hour window carries the newest pair
-// the machine has seen.
-//
-// A later five-hour reset counts as a later window only once the one the machine
-// holds has ended; while that one is still running, a later reset is a window
-// re-anchored under the payload, not a payload taken later.
-//
-// A payload with no five-hour window of its own proves nothing, and counts only
-// while this machine has never seen one, because the subscription may have no
-// five-hour limit at all. Even then it is never treated as newer, so it cannot
-// take a window the machine holds open.
+// payloadAge dates a payload by its own five-hour window: that window is at most
+// five hours long and usage only rises within it, so reset and usage together
+// order payloads by age. A later reset while the stored window is still running
+// is that window re-anchored, not a later payload. A payload with no five-hour
+// window dates nothing and counts only while the machine has never seen one,
+// because the subscription may have no five-hour limit; even then it is never
+// newer. See docs/spec/gaugewire/reducer-and-dedupe.md.
 func payloadAge(fiveHour Window, obs Observation) age {
 	if obs.FiveHour == nil || !obs.FiveHour.ResetsAt.After(obs.CapturedAt) {
 		if fiveHour.Status == WindowUnknown {
@@ -75,9 +62,6 @@ func payloadAge(fiveHour Window, obs Observation) age {
 	switch {
 	case obs.FiveHour.ResetsAt.After(*fiveHour.ResetsAt):
 		if fiveHour.ResetsAt.After(obs.CapturedAt) {
-			// A five-hour window the machine holds is still running, so a
-			// payload announcing a later one was not taken later: its window
-			// was re-anchored, exactly as the seven-day schedule was.
 			return undated
 		}
 		return newer
@@ -92,9 +76,8 @@ func payloadAge(fiveHour Window, obs Observation) age {
 	}
 }
 
-// expire keeps a window that is still open and retires one whose reset has passed,
-// whether the reading that arrived was absent or refused: a value from a window
-// that has ended says nothing about the window open now.
+// expire keeps a window that is still open and retires one whose reset has
+// passed: a value from a window that has ended says nothing about the one open now.
 func expire(stored Window, now time.Time) Window {
 	if stored.ResetsAt == nil || stored.Status == WindowUnknown {
 		return Window{Status: WindowUnknown}
@@ -105,19 +88,13 @@ func expire(stored Window, now time.Time) Window {
 	return Window{Status: WindowExpired, ResetsAt: stored.ResetsAt}
 }
 
-// accepts is the staleness guard. Every open Claude Code session runs the
-// status line with the rate limits it last received, so one machine sees many
-// readings of one window, and after the subscription's window schedule changes
-// it also sees readings of a window that no longer applies.
-//
-// A reading whose reset has passed describes a window that has ended and says
-// nothing about the one open now. A reading of the window already stored
-// refines it whatever the payload's age, because usage only rises within a
-// window and a session behind the others reports less. Taking a window the
-// machine holds open and calling it something else needs a payload newer than
-// any seen so far, so that two sessions cannot take it from each other on
-// every tick; naming a window the machine does not hold, because it has ended
-// or was never seen, asks only for a payload that can place itself in time.
+// accepts is the staleness guard: every open session reports the rate limits it
+// last received, so one machine sees many readings of one window and, after the
+// schedule changes, readings of a window that no longer applies. A reading of
+// the window already stored refines it whatever the payload's age, since usage
+// only rises within a window. Taking a window the machine holds open needs a
+// payload newer than any seen so far, so two sessions cannot trade it on every
+// tick; naming a window it does not hold asks only for a dated payload.
 func accepts(stored Window, incoming Reading, now time.Time, clock age) bool {
 	if !incoming.ResetsAt.After(now) {
 		return false

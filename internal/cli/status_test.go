@@ -22,10 +22,8 @@ func golden(t *testing.T, name string) string {
 	return string(data)
 }
 
-// TestWindowLineShowsAPercentageAPersonCanRead pins the display against the
-// values Claude Code actually sends: a percentage arrives as a float, and a
-// sum of usage comes through as 7.000000000000001. The stored and published
-// value stays exact; only this line is rounded, to one decimal.
+// Pinned against what Claude Code sends: a summed usage arrives as
+// 7.000000000000001, and only the display is rounded, to one decimal.
 func TestWindowLineShowsAPercentageAPersonCanRead(t *testing.T) {
 	t.Parallel()
 	zone := time.FixedZone("CEST", 2*60*60)

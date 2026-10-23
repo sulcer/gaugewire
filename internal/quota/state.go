@@ -16,8 +16,7 @@ type State struct {
 
 // Published records the snapshot most recently spooled for delivery.
 type Published struct {
-	EventID string `json:"eventId"`
-	// CapturedAt is normalised like the snapshot's.
+	EventID    string    `json:"eventId"`
 	CapturedAt time.Time `json:"capturedAt"`
 	Windows    Windows   `json:"windows"`
 }

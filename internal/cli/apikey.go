@@ -18,8 +18,7 @@ var ErrNoAPIKey = errors.New("no Databox API key: pass --api-key-file to gaugewi
 func loadAPIKey(creds config.Credentials, getenv func(string) string) (key, warn string, err error) {
 	if creds.APIKeyFile != "" {
 		raw, readErr := os.ReadFile(creds.APIKeyFile)
-		// A key pasted where the path belongs lands here, so the path is not
-		// printed back.
+		// A key pasted where the path belongs lands here: never print it back.
 		if errors.Is(readErr, os.ErrNotExist) {
 			return "", "", errors.New("key file not found; credentials.apiKeyFile and --api-key-file take the path of a file that holds the key")
 		}

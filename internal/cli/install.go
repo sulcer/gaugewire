@@ -26,8 +26,7 @@ var ErrAlreadyInstalled = errors.New("status line already points at gaugewire; p
 // no record of what it replaced, so reinstalling would lose the original.
 var ErrNoInstallRecord = errors.New("status line already points at gaugewire but config.json has no install record; restore settings.json from the newest .gaugewire-backup-* file and run install again")
 
-// ErrInvalidAccountID means --account-id is not a UUID. Every machine on one
-// subscription must carry the same id, so it is copied from the first install.
+// ErrInvalidAccountID means --account-id is not a UUID.
 var ErrInvalidAccountID = errors.New("--account-id must be a UUID, as printed on the account line by install on the subscription's first machine")
 
 const defaultAccountAlias = "claude-01"
@@ -43,7 +42,6 @@ type installOptions struct {
 	hostname     func() (string, error)
 }
 
-// runInstall parses the flags and installs with the real executable, clock and hostname.
 func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error {
 	flags := flag.NewFlagSet("install", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)
@@ -83,10 +81,9 @@ func runInstall(_ context.Context, args []string, _ BuildInfo, streams IO) error
 	return install(home, opts, streams.Stdout)
 }
 
-// install loads or creates config.json, splices the status-line command into
-// the settings file and records what it changed. config.json is saved before
-// the settings file is touched, so every intermediate state still knows how to
-// get back to the user's original status line.
+// install splices the status-line command into the settings file and records
+// what it changed. config.json is saved first, so every intermediate state still
+// knows how to get back to the user's original status line.
 func install(home string, opts installOptions, stdout io.Writer) error {
 	cfg, err := loadOrCreateConfig(home, opts)
 	if err != nil {
@@ -196,8 +193,7 @@ func loadOrCreateConfig(home string, opts installOptions) (config.Config, error)
 }
 
 // installedCommand builds the status-line command for this binary. Paths use
-// forward slashes, written with strings.ReplaceAll rather than filepath.ToSlash
-// so the conversion happens on every platform, because Git Bash strips
+// forward slashes on every platform, not just Windows, because Git Bash strips
 // unquoted backslashes; the path is quoted only when it contains whitespace.
 func installedCommand(executable string) string {
 	path := strings.ReplaceAll(executable, `\`, "/")
@@ -226,8 +222,7 @@ func isGaugewire(command string) bool {
 		strings.HasSuffix(trimmed, `gaugewire" statusline`) || strings.HasSuffix(trimmed, `gaugewire.exe" statusline`)
 }
 
-// commandOf returns the command string of a statusLine object, or "" when
-// there is no object or no command.
+// commandOf returns the statusLine object's command, or "" when there is none.
 func commandOf(value json.RawMessage) string {
 	if len(value) == 0 {
 		return ""
@@ -245,8 +240,7 @@ func commandOf(value json.RawMessage) string {
 
 // statusLineWith returns the statusLine object with its command replaced and a
 // "type" added when it had none. An absent value, or an object with no members,
-// is replaced by a fresh {"type":"command","command":...} object: neither holds
-// a setting worth keeping, and both would otherwise leave a typeless statusLine.
+// is replaced outright: neither holds a setting worth keeping.
 func statusLineWith(value json.RawMessage, command string) (json.RawMessage, error) {
 	quoted, err := json.Marshal(command)
 	if err != nil {

@@ -82,8 +82,7 @@ func DeadLetter(home string, pe PendingEvent, reason string, now time.Time) erro
 }
 
 // Requeue moves every dead-letter event back to pending/ with its delivery state
-// reset, so the next flush retries it. It returns how many events were moved,
-// even when it stops on an error.
+// reset. It returns how many moved, even when it stops on an error.
 func Requeue(home string, now time.Time) (int, error) {
 	dead, err := listEvents(filepath.Join(home, DeadLetterDir))
 	if err != nil {
@@ -110,8 +109,7 @@ func Requeue(home string, now time.Time) (int, error) {
 
 // Quarantine renames every pending file that cannot be decoded to
 // dead-letter/<name>.unreadable, so a corrupt file never blocks delivery of the
-// others. It returns the file names it moved. The rename keeps the bytes for a
-// human to inspect; nothing can be added to content that does not decode.
+// others, and returns the names it moved.
 func Quarantine(home string) ([]string, error) {
 	pendingDir := filepath.Join(home, PendingDir)
 	names, err := eventFiles(pendingDir)

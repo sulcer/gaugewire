@@ -18,8 +18,7 @@ func TestFlushRequeuesDeadLettersWhenAsked(t *testing.T) {
 	if err := store.EnsureLayout(home); err != nil {
 		t.Fatalf("layout: %v", err)
 	}
-	// Disabled, so the requeued event stays pending without a sink that
-	// would have to be built, and the run succeeds on the requeue alone.
+	// Disabled, so the run succeeds on the requeue alone, with no sink to build.
 	disabled := databoxSink()
 	disabled.Enabled = false
 	if err := config.Save(home, testConfig(disabled)); err != nil {

@@ -1,6 +1,5 @@
-// Package quota is the pure domain of Gaugewire: rate-limit windows, the reducer
-// that folds observations into machine state, the publish decision, and the
-// QuotaSnapshot v1 contract. It performs no I/O.
+// Package quota is Gaugewire's pure domain: rate-limit windows, the reducer, the
+// publish decision and the QuotaSnapshot v1 contract. It does no I/O.
 package quota
 
 import "time"

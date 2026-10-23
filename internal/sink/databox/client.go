@@ -75,8 +75,7 @@ type Ingestion struct {
 }
 
 // NewClient builds a client for baseURL with the given key. A nil httpClient
-// uses a default one; per-request timeouts come from the context. The caller's
-// client is copied rather than mutated.
+// uses a default one; the caller's client is copied rather than mutated.
 func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
 	base := strings.TrimSpace(baseURL)
 	if base == "" {
@@ -85,8 +84,6 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	if apiKey == "" {
 		return nil, errors.New("databox: API key is empty")
 	}
-	// The key travels in a header, so it only ever goes over TLS; plain http
-	// is left for a test server on this machine.
 	parsed, err := url.Parse(base)
 	if err != nil || !allowedScheme(parsed) {
 		return nil, errors.New("databox: base URL must use https")
@@ -103,7 +100,8 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	return &Client{base: strings.TrimRight(base, "/"), key: apiKey, http: &copied}, nil
 }
 
-// allowedScheme accepts https anywhere and plain http only to this machine.
+// allowedScheme accepts https anywhere and plain http only to this machine,
+// since the key travels in a header.
 func allowedScheme(u *url.URL) bool {
 	switch u.Scheme {
 	case "https":

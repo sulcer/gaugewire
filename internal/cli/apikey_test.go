@@ -60,8 +60,7 @@ func TestLoadAPIKeyReportsNoKey(t *testing.T) {
 	}
 }
 
-// TestLoadAPIKeyDoesNotEchoAMissingKeyFilePath passes a key pasted where the
-// path belongs: the error must not print it back.
+// The path is a key pasted where the path belongs; the error must not echo it.
 func TestLoadAPIKeyDoesNotEchoAMissingKeyFilePath(t *testing.T) {
 	t.Parallel()
 	pasted := filepath.Join(t.TempDir(), "dbx-pasted-key-0123")

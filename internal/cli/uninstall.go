@@ -18,7 +18,6 @@ import (
 // ErrNotInstalled means config.json records no install to undo.
 var ErrNotInstalled = errors.New("gaugewire is not installed on this machine")
 
-// runUninstall parses the flags and undoes the install recorded in config.json.
 func runUninstall(_ context.Context, args []string, _ BuildInfo, streams IO) error {
 	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)
@@ -45,11 +44,10 @@ func runUninstall(_ context.Context, args []string, _ BuildInfo, streams IO) err
 	return uninstall(home, path, *purge, streams.Stdout)
 }
 
-// uninstall restores the status line recorded at install when it is still
-// ours, clears the install record, and deletes the home directory when purge
-// is set. The restored value is the recorded original compacted onto one line,
-// because config.Save re-indents it and its original source bytes are gone;
-// every other byte of the settings file is left untouched.
+// uninstall restores the status line recorded at install when it is still ours,
+// clears the install record and, with purge, deletes the home directory. The
+// restored value is the recorded original compacted onto one line, because its
+// source bytes are gone; every other byte of the file is left untouched.
 func uninstall(home, settingsPath string, purge bool, stdout io.Writer) error {
 	cfg, err := config.Load(home)
 	if errors.Is(err, config.ErrMissing) {

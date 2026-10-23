@@ -12,10 +12,9 @@ import (
 )
 
 // spawnFlusher starts `gaugewire flush` detached from this process: its own
-// session, stdin and stdout from and to the null device, stderr appended to the
-// log file, so Claude Code's stdout pipe closes as soon as the hot path exits.
-// The flusher's own summary line is plain text and would break the JSON log; its
-// counts reach the log through the "flush finished" record instead.
+// session, stdin and stdout on the null device, stderr appended to the log file,
+// so Claude Code's stdout pipe closes as soon as the hot path exits. Its summary
+// line is plain text, which would break the JSON log.
 func spawnFlusher(home string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -27,8 +26,7 @@ func spawnFlusher(home string) error {
 		return fmt.Errorf("open log for flusher: %w", err)
 	}
 	defer func() { _ = out.Close() }()
-	// The flusher outlives this call, so it is deliberately not tied to a caller
-	// context; context.Background() is the correct, unblocking choice here.
+	// The flusher outlives this call, so it is not tied to a caller context.
 	cmd := exec.CommandContext(context.Background(), exe, "flush")
 	cmd.Env = append(os.Environ(), store.HomeEnv+"="+home)
 	cmd.Stdin = nil

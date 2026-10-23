@@ -260,8 +260,7 @@ func TestNewClientRefusesPlainHTTPToARemoteHost(t *testing.T) {
 	}
 }
 
-// TestIdsAreEscapedInThePath uses ids holding "?" and "#", which would end the
-// path early if they were pasted in unescaped.
+// The ids hold "?" and "#", which would end the path early if pasted unescaped.
 func TestIdsAreEscapedInThePath(t *testing.T) {
 	t.Parallel()
 	f := newFake(t)

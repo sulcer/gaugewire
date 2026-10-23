@@ -19,8 +19,7 @@ import (
 
 var installAt = time.Date(2026, 9, 18, 10, 30, 0, 0, time.UTC)
 
-// generatedUUID masks the node and account ids install prints, so stdout is one
-// comparable value.
+// generatedUUID masks the ids install prints, so stdout is one comparable value.
 var generatedUUID = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 func installOpts(settingsPath string) installOptions {
@@ -59,10 +58,8 @@ func snapshotInstall(t *testing.T, home, settingsPath string, err error, stdout 
 	return out
 }
 
-// compactJSON normalizes a saved raw value. config.Save marshals with
-// json.MarshalIndent, which re-indents every json.RawMessage, so the original
-// status line comes back JSON-equal to the settings file rather than
-// byte-equal; only the backup file keeps the original bytes.
+// compactJSON normalizes a saved raw value: config.Save re-indents every
+// json.RawMessage, so the original comes back JSON-equal, not byte-equal.
 func compactJSON(r json.RawMessage) string {
 	var out bytes.Buffer
 	if json.Compact(&out, r) != nil {
@@ -130,8 +127,7 @@ func TestInstallCreatesTheSettingsFileWhenMissing(t *testing.T) {
 	}
 }
 
-// An object with no members carries no renderer to keep, so install replaces it
-// with the fresh object rather than leaving a statusLine without a type.
+// An object with no members carries no renderer to keep, so install replaces it.
 func TestInstallAddsTypeToAnEmptyStatusLineObject(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()

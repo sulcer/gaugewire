@@ -13,10 +13,9 @@ import (
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
-// runStatusline is the hot path. It reads stdin once, starts the renderer with
-// the exact bytes, observes in parallel, spawns the flusher when work is due,
-// then forwards the renderer's result. It always returns nil: Claude Code must
-// never see a failed status line because of observability.
+// runStatusline is the hot path: read stdin once, start the renderer with the
+// exact bytes, observe in parallel, spawn the flusher when work is due. It
+// always returns nil, so Claude Code never sees observability fail.
 func runStatusline(ctx context.Context, info BuildInfo, streams IO, spawn func(home string) error) error {
 	payload, err := io.ReadAll(streams.Stdin)
 	if err != nil {

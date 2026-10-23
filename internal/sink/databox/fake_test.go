@@ -51,7 +51,6 @@ func (f *fake) on(method, path string, status int, body string) {
 	f.replies[key] = append(f.replies[key], reply{Status: status, Body: body})
 }
 
-// onRedirect queues a redirect reply carrying a Location header.
 func (f *fake) onRedirect(method, path string, status int, location string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

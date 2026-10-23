@@ -49,9 +49,8 @@ func snapshotUninstall(t *testing.T, home, settingsPath string, err error, stdou
 	return out
 }
 
-// The restored object is the original compacted, because config.Save re-indents
-// the stored raw value and the original source bytes are gone; every other byte
-// of the document is untouched.
+// The restored object is the original compacted, because its source bytes are
+// gone; every other byte of the document is untouched.
 func TestUninstallRestoresTheOriginalObject(t *testing.T) {
 	t.Parallel()
 	original := "{\n  \"model\": \"claude-sonnet-5\",\n  \"statusLine\": { \"type\": \"command\", \"command\": \"bash ~/.claude/statusline-command.sh\", \"refreshInterval\": 5 }\n}\n"
@@ -110,8 +109,7 @@ func TestUninstallWithPurgeDeletesTheHome(t *testing.T) {
 	}
 }
 
-// --purge is explicit and unconditional: local data goes even when the status
-// line is no longer ours and nothing can be restored.
+// --purge is unconditional: local data goes even when nothing can be restored.
 func TestUninstallPurgesEvenWhenTheStatusLineChanged(t *testing.T) {
 	t.Parallel()
 	home, settingsPath := installFixture(t, `{"statusLine":{"type":"command","command":"cat"}}`)

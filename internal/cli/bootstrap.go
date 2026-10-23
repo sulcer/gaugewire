@@ -65,9 +65,8 @@ func runDatabox(ctx context.Context, args []string, info BuildInfo, streams IO) 
 }
 
 // bootstrap validates the key, picks the account, reuses or creates the data
-// source and datasets, and records their ids in the sink entry. Repeated runs
-// create nothing. The ids are always resolved by title, so an id in config.json
-// that the account no longer holds is replaced rather than trusted.
+// source and datasets, and records their ids in the sink entry. Ids are resolved
+// by title, so one the account no longer holds is replaced rather than trusted.
 func bootstrap(ctx context.Context, home string, opts bootstrapOptions, stdout, stderr io.Writer) error {
 	cfg, err := config.Load(home)
 	if err != nil {
@@ -147,8 +146,7 @@ func sinkEntry(cfg *config.Config, id string) *config.Sink {
 }
 
 // resolveCredentials records where the key is read from. A named key file wins
-// and is stored as an absolute path; the file itself is never copied or read
-// into config.json.
+// and is stored as an absolute path; its content never enters config.json.
 func resolveCredentials(entry *config.Sink, apiKeyFile string) error {
 	if apiKeyFile != "" {
 		absolute, err := filepath.Abs(apiKeyFile)
@@ -210,9 +208,8 @@ func ensureDataSource(ctx context.Context, client *databox.Client, accountID int
 	return created, true, nil
 }
 
-// ensureDataset picks the dataset with the title out of the data source's
-// datasets, creating it when it is absent. The list is read once by the caller
-// because both datasets live in the same data source.
+// ensureDataset picks the dataset with the title, creating it when absent. The
+// caller reads the list once: both datasets live in the same data source.
 func ensureDataset(ctx context.Context, client *databox.Client, existing []databox.Dataset, dataSourceID int64, title, primaryKey string) (databox.Dataset, bool, error) {
 	for _, d := range existing {
 		if d.Title == title {
@@ -236,13 +233,11 @@ func createdOrReused(created bool) string {
 	return "reused"
 }
 
-// sendTestHeartbeat sends one heartbeat built from the current state and prints
-// the ingestion ids, so the dashboard shows a row before the next quota change.
-// Without an observed window the heartbeat would be all nulls, so it is skipped
-// until Claude Code has shown its status line. The ids are read back from
-// state.json and must carry this send's time: an ingestion the sink could not
-// record, or a record left by an earlier run, is reported as a failure, because
-// the next flush would resend it.
+// sendTestHeartbeat sends one heartbeat built from the current state, so the
+// dashboard shows a row before the next quota change. Without an observed window
+// it would be all nulls, so it is skipped. The ids are read back from state.json
+// and must carry this send's time: a record the sink could not write, or one
+// left by an earlier run, is a failure, because the next flush would resend it.
 func sendTestHeartbeat(ctx context.Context, home string, cfg config.Config, entry config.Sink, client *databox.Client, opts bootstrapOptions, stdout io.Writer) error {
 	state, err := store.LoadState(home)
 	if err != nil && !errors.Is(err, store.ErrStateCorrupt) {

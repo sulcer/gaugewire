@@ -13,7 +13,6 @@ import (
 	"github.com/sulcer/gaugewire/internal/store"
 )
 
-// runFlush performs one flusher run and prints a one-line summary.
 func runFlush(ctx context.Context, args []string, _ BuildInfo, streams IO) error {
 	flags := flag.NewFlagSet("flush", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)

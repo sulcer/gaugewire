@@ -1,6 +1,5 @@
 // Package claude turns Claude Code's status-line JSON into a quota observation.
-// Only the version and the two subscription windows are read; everything else
-// in the payload is ignored and never retained.
+// Only the version and the two windows are read; the rest is never retained.
 package claude
 
 import (
@@ -19,8 +18,7 @@ import (
 // in the documented shape.
 const MinimumVersion = "2.1.251"
 
-// VersionSupported reports whether a Claude Code version string is at least
-// MinimumVersion, the first release whose status-line payload carries rate limits.
+// VersionSupported reports whether version is at least MinimumVersion.
 func VersionSupported(version string) bool {
 	return versionAtLeast(version, MinimumVersion)
 }

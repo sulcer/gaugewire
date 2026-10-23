@@ -1,6 +1,5 @@
 // Package settings edits one top-level member of a JSON object while leaving
-// every other byte of the document untouched. Gaugewire uses it to install and
-// remove its status-line command in Claude Code's settings file.
+// every other byte of the document untouched.
 package settings
 
 import (
@@ -21,8 +20,7 @@ var ErrNotObject = errors.New("settings: top level is not a JSON object")
 // rewriting it would silently drop whatever follows.
 var errTrailingData = errors.New("settings: trailing data after the object")
 
-// Member is the result of Get: the exact value bytes of a top-level member
-// and where they sit in the document.
+// Member is a top-level member: its exact value bytes and where they sit.
 type Member struct {
 	Found bool
 	Value json.RawMessage
