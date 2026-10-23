@@ -63,10 +63,13 @@ ingestion and record it here:
 |---|---|
 | | |
 
-Confirm the assumptions from the [sink spec](../spec/gaugewire/databox-sink.md): whether column
-types are inferred from the first ingestion so `*_at` columns show as datetimes; whether a
-throttling 429 carries the JSON envelope and what status codes other errors arrive with; whether
-an error ever arrives with a 2xx status; and whether any list response was paginated.
+Confirm the assumptions from the [sink spec](../spec/gaugewire/databox-sink.md): whether a
+throttling 429 carries the JSON envelope, and what `status` an accepted ingestion reports. Check
+that the `*_at` columns show as datetimes and the percentages as numbers.
+
+On a machine that ran a v1 build, upgrade and run `gaugewire databox bootstrap` again. Both
+dataset lines must read `reused`; `created` means datasets made through v1 are not visible to
+v2, so record it, because the dashboards then start from empty.
 
 ## 6. Uninstall
 

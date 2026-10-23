@@ -7,6 +7,7 @@ decision-date: 2026-09-17
 # The Databox sink targets the documented v1 API and acknowledges on accept
 
 Amended by: 2026-09-19-doctor-judges-ingestions-by-rejected-records.md (doctor's ingestion check)
+Amended by: 2026-10-23-databox-sink-targets-v2.md (the API version)
 
 ## Members
 
